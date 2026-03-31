@@ -7,6 +7,9 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../providers/theme_provider.dart';
 import '../../../../providers/auth_provider.dart';
 import '../../../../providers/profile_provider.dart';
+import '../../../../providers/notification_preferences_provider.dart';
+import '../../../../core/database/database_provider.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../../auth/presentation/screens/pin_setup_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -25,7 +28,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final profile = ref.watch(userProfileProvider);
     final themeMode = ref.watch(themeModeProvider);
     final authState = ref.watch(authProvider);
+    final notificationPrefs = ref.watch(notificationPreferencesProvider);
     final isDark = themeMode == ThemeMode.dark;
+    final reminderTimeText = MaterialLocalizations.of(context).formatTimeOfDay(
+      notificationPrefs.routineReminderTime,
+      alwaysUse24HourFormat: MediaQuery.of(context).alwaysUse24HourFormat,
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -114,6 +122,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       }
                     },
                   ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppDimensions.xl),
+
+          // Notifications
+          _SectionTitle(title: 'Notifications'),
+          const SizedBox(height: AppDimensions.sm),
+          AppCard(
+            child: Column(
+              children: [
+                _SettingsTile(
+                  icon: Icons.schedule_rounded,
+                  iconColor: AppColors.primary,
+                  title: 'Daily Routine Reminder Time',
+                  subtitle: reminderTimeText,
+                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  onTap: () => _pickDailyReminderTime(context),
+                ),
+                Divider(height: 1, color: theme.colorScheme.outline),
+                _SettingsTile(
+                  icon: Icons.notifications_active_rounded,
+                  iconColor: AppColors.warning,
+                  title: 'Reminder Type',
+                  subtitle: _alertModeLabel(notificationPrefs.alertMode),
+                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  onTap: () => _pickAlertMode(context),
                 ),
               ],
             ),
@@ -307,6 +343,104 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  String _alertModeLabel(ReminderAlertMode mode) {
+    switch (mode) {
+      case ReminderAlertMode.ring:
+        return 'Ring';
+      case ReminderAlertMode.ringAndVibration:
+        return 'Ring + Vibration';
+      case ReminderAlertMode.vibration:
+        return 'Vibration';
+      case ReminderAlertMode.silent:
+        return 'Silent';
+    }
+  }
+
+  Future<void> _pickDailyReminderTime(BuildContext context) async {
+    final prefsState = ref.read(notificationPreferencesProvider);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: prefsState.routineReminderTime,
+    );
+    if (picked == null) return;
+
+    await ref.read(notificationPreferencesProvider.notifier).setRoutineReminderTime(picked);
+    await _rescheduleRoutineReminders();
+    if (!mounted) return;
+    ScaffoldMessenger.of(this.context).showSnackBar(
+      const SnackBar(content: Text('Daily reminder time updated')),
+    );
+  }
+
+  Future<void> _pickAlertMode(BuildContext context) async {
+    final current = ref.read(notificationPreferencesProvider).alertMode;
+    final selected = await showModalBottomSheet<ReminderAlertMode>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: ReminderAlertMode.values.map((mode) {
+                return ListTile(
+                  leading: Icon(
+                    current == mode ? Icons.radio_button_checked : Icons.radio_button_off,
+                    color: current == mode ? AppColors.primary : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text(_alertModeLabel(mode)),
+                  onTap: () => Navigator.pop(ctx, mode),
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected == null || selected == current) return;
+
+    await ref.read(notificationPreferencesProvider.notifier).setAlertMode(selected);
+    await _rescheduleRoutineReminders();
+    if (!mounted) return;
+    ScaffoldMessenger.of(this.context).showSnackBar(
+      const SnackBar(content: Text('Reminder type updated')),
+    );
+  }
+
+  Future<void> _rescheduleRoutineReminders() async {
+    final db = ref.read(databaseProvider);
+    final notification = ref.read(notificationServiceProvider);
+    final prefs = ref.read(notificationPreferencesProvider);
+    final routines = await db.getAllRoutines();
+
+    for (final routine in routines) {
+      await notification.cancelRoutineReminders(routine.id);
+      final days = routine.days
+          .split(',')
+          .map((d) => int.tryParse(d))
+          .whereType<int>()
+          .toList();
+      if (days.isEmpty) continue;
+
+      await notification.scheduleRoutineReminder(
+        routineId: routine.id,
+        title: 'Routine: ${routine.title}',
+        body: 'Time to start your morning routine!',
+        daysOfWeek: days,
+        hour: prefs.routineReminderTime.hour,
+        minute: prefs.routineReminderTime.minute,
+        alertMode: prefs.alertMode,
+      );
+    }
   }
 }
 

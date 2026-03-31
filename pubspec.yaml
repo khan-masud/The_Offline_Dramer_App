@@ -1,7 +1,7 @@
 name: tod
 description: "The Offline Dreamer - Your Personal Life Manager"
 publish_to: 'none'
-version: 1.1.0+1
+version: 1.2.0+1
 
 environment:
   sdk: ^3.7.0

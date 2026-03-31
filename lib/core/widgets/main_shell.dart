@@ -7,6 +7,7 @@ import '../../features/routine/presentation/screens/routine_screen.dart';
 import '../../features/todo/presentation/screens/todo_screen.dart';
 import '../../features/todo/data/todo_provider.dart';
 import '../../features/routine/data/routine_provider.dart';
+import '../database/app_database.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
 
@@ -57,9 +58,15 @@ class _MainShellState extends ConsumerState<MainShell> {
     final theme = Theme.of(context);
     final todoStats = ref.watch(todoStatsProvider).valueOrNull;
     final todayRoutines = ref.watch(todayRoutinesProvider).valueOrNull;
+    final todayCompletions = ref.watch(todayCompletionsProvider).valueOrNull ?? const <RoutineCompletion>[];
+    final completedRoutineItemIds = todayCompletions.map((c) => c.routineItemId).toSet();
 
     final pendingCount = todoStats?.pending ?? 0;
-    final routineCount = todayRoutines?.length ?? 0;
+    int routinePendingCount = 0;
+    for (final routine in (todayRoutines ?? const <Routine>[])) {
+      final routineItems = ref.watch(routineItemsProvider(routine.id)).valueOrNull ?? const <RoutineItem>[];
+      routinePendingCount += routineItems.where((item) => !completedRoutineItemIds.contains(item.id)).length;
+    }
 
     return MainShellController(
       switchTab: _switchTab,
@@ -103,7 +110,7 @@ class _MainShellState extends ConsumerState<MainShell> {
                     icon: Icons.loop_rounded,
                     label: 'Routine',
                     isActive: _currentIndex == 2,
-                    badgeCount: routineCount > 99 ? 99 : routineCount,
+                    badgeCount: routinePendingCount > 99 ? 99 : routinePendingCount,
                     onTap: () => _switchTab(2),
                   ),
                   _NavItem(

@@ -33,13 +33,12 @@ class SubTasks extends Table {
 
 class FocusSessions extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get todoId => integer().nullable().references(Todos, #id)(); 
+  IntColumn get todoId => integer().nullable().references(Todos, #id)();
+  IntColumn get routineItemId => integer().nullable().references(RoutineItems, #id)();
   TextColumn get sessionType => text().withDefault(const Constant('pomodoro'))(); // 'pomodoro' or 'stopwatch'
   IntColumn get durationSeconds => integer()();
-  DateTimeColumn get startTime => dateTime()();
-  DateTimeColumn get endTime => dateTime()();
+  DateTimeColumn get startTime => dateTime()();  DateTimeColumn get endTime => dateTime()();
 }
-
 // ==================== NOTES ====================
 class Notes extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -68,12 +67,23 @@ class RoutineItems extends Table {
   TextColumn get startTime => text().nullable()(); // "HH:mm"
   TextColumn get endTime => text().nullable()();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  IntColumn get priority => integer().withDefault(const Constant(0))(); // 0=none,1=low,2=medium,3=high
+}
+
+class RoutineSubTasks extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get routineItemId => integer().references(RoutineItems, #id)();
+  TextColumn get title => text().withLength(min: 1, max: 500)();
+  BoolColumn get isCompleted => boolean().withDefault(const Constant(false))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime()();
 }
 
 class RoutineCompletions extends Table {
   IntColumn get id => integer().autoIncrement()();
-  IntColumn get routineItemId => integer()();
-  DateTimeColumn get completedDate => dateTime()();
+  IntColumn get routineItemId => integer().references(RoutineItems, #id)();
+  DateTimeColumn get completedDate => dateTime()(); // The date this was completed
+  BoolColumn get isCompleted => boolean().withDefault(const Constant(true))();
 }
 
 // ==================== TRANSACTIONS ====================
@@ -125,14 +135,14 @@ class HabitCompletions extends Table {
 // ==================== DATABASE ====================
 @DriftDatabase(tables: [
   Todos, SubTasks, FocusSessions, 
-  Notes, Routines, RoutineItems, RoutineCompletions,
+  Notes, Routines, RoutineItems, RoutineSubTasks, RoutineCompletions,
   Transactions, MonthlyBudgets, Links, Habits, HabitCompletions,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(conn.connect());
 
   @override
-  int get schemaVersion => 5;
+int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -143,20 +153,27 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(monthlyBudgets);
       }
       if (from < 3) {
-          await m.createTable(links);
-          await m.createTable(habits);
-          await m.createTable(habitCompletions);
-        }
-        if (from < 4) {
-          // Ignore as the column is removed in schema 5
-        }
-        if (from < 5) {
-          await m.createTable(subTasks);
-          await m.createTable(focusSessions);
-          await m.addColumn(todos, todos.tags);
-          await m.addColumn(todos, todos.remindAt);
-          await m.addColumn(todos, todos.sortOrder);
-        }
+        await m.createTable(links);
+        await m.createTable(habits);
+        await m.createTable(habitCompletions);
+      }
+      if (from < 4) {
+        // Ignore as the column is removed in schema 5
+      }
+      if (from < 5) {
+        await m.createTable(subTasks);
+        await m.createTable(focusSessions);
+        await m.addColumn(todos, todos.tags);
+        await m.addColumn(todos, todos.remindAt);
+        await m.addColumn(todos, todos.sortOrder);
+      }
+      if (from < 6) {
+        await m.addColumn(routineItems, routineItems.priority);
+        await m.addColumn(focusSessions, focusSessions.routineItemId);
+      }
+      if (from < 7) {
+        await m.createTable(routineSubTasks);
+      }
     },
   );
 
@@ -265,7 +282,13 @@ class AppDatabase extends _$AppDatabase {
   Stream<List<Routine>> watchAllRoutines() =>
       (select(routines)..orderBy([(r) => OrderingTerm.desc(r.createdAt)])).watch();
 
+    Future<List<Routine>> getAllRoutines() =>
+      (select(routines)..orderBy([(r) => OrderingTerm.desc(r.createdAt)])).get();
+
   Future<int> addRoutine(RoutinesCompanion entry) => into(routines).insert(entry);
+
+  Future<bool> updateRoutine(RoutinesCompanion entry) =>
+      (update(routines)..where((r) => r.id.equals(entry.id.value))).write(entry).then((rows) => rows > 0);
 
   Future<int> deleteRoutine(int id) {
     return transaction(() async {
@@ -277,13 +300,43 @@ class AppDatabase extends _$AppDatabase {
   Stream<List<RoutineItem>> watchRoutineItems(int routineId) =>
       (select(routineItems)
         ..where((ri) => ri.routineId.equals(routineId))
-        ..orderBy([(ri) => OrderingTerm.asc(ri.sortOrder)])
+        ..orderBy([
+          (ri) => OrderingTerm.desc(ri.priority),
+          (ri) => OrderingTerm.asc(ri.sortOrder),
+          (ri) => OrderingTerm.asc(ri.id),
+        ])
       ).watch();
 
   Future<int> addRoutineItem(RoutineItemsCompanion entry) => into(routineItems).insert(entry);
 
+  Future<bool> updateRoutineItem(RoutineItemsCompanion entry) =>
+      (update(routineItems)..where((ri) => ri.id.equals(entry.id.value))).write(entry).then((rows) => rows > 0);
+
   Future<int> deleteRoutineItem(int id) =>
-      (delete(routineItems)..where((ri) => ri.id.equals(id))).go();
+      transaction(() async {
+        await (delete(routineSubTasks)..where((st) => st.routineItemId.equals(id))).go();
+        return (delete(routineItems)..where((ri) => ri.id.equals(id))).go();
+      });
+
+  Stream<List<RoutineSubTask>> watchRoutineSubTasks(int routineItemId) {
+    return (select(routineSubTasks)
+          ..where((st) => st.routineItemId.equals(routineItemId))
+          ..orderBy([(st) => OrderingTerm.asc(st.sortOrder), (st) => OrderingTerm.asc(st.id)]))
+        .watch();
+  }
+
+  Future<int> addRoutineSubTask(RoutineSubTasksCompanion entry) => into(routineSubTasks).insert(entry);
+
+  Future<bool> updateRoutineSubTask(RoutineSubTasksCompanion entry) =>
+      (update(routineSubTasks)..where((st) => st.id.equals(entry.id.value))).write(entry).then((rows) => rows > 0);
+
+  Future<int> deleteRoutineSubTask(int id) =>
+      (delete(routineSubTasks)..where((st) => st.id.equals(id))).go();
+
+  Future<void> toggleRoutineSubTask(int id, bool completed) =>
+      (update(routineSubTasks)..where((st) => st.id.equals(id))).write(
+        RoutineSubTasksCompanion(isCompleted: Value(completed)),
+      );
 
   // Completions
   Stream<List<RoutineCompletion>> watchTodayCompletions() {

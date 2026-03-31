@@ -2,6 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/database/database_provider.dart';
 
+enum RoutinePriorityFilter { all, high, medium, low }
+
+final routinePriorityFilterProvider =
+  StateProvider<RoutinePriorityFilter>((ref) => RoutinePriorityFilter.all);
+
 // All routines
 final routinesProvider = StreamProvider<List<Routine>>((ref) {
   final db = ref.watch(databaseProvider);
@@ -12,6 +17,11 @@ final routinesProvider = StreamProvider<List<Routine>>((ref) {
 final routineItemsProvider = StreamProvider.family<List<RoutineItem>, int>((ref, routineId) {
   final db = ref.watch(databaseProvider);
   return db.watchRoutineItems(routineId);
+});
+
+final routineSubTasksProvider = StreamProvider.family<List<RoutineSubTask>, int>((ref, routineItemId) {
+  final db = ref.watch(databaseProvider);
+  return db.watchRoutineSubTasks(routineItemId);
 });
 
 // Today's completions

@@ -9,6 +9,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/services/notification_service.dart';
+import '../../../../providers/notification_preferences_provider.dart';
 import '../../data/todo_provider.dart';
 import 'todo_timer_dialog.dart';
 
@@ -151,6 +152,7 @@ class TodoScreen extends ConsumerWidget {
                               title: 'Todo Reminder',
                               body: todos[i].title,
                               scheduledDate: todos[i].remindAt!,
+                              alertMode: ref.read(notificationPreferencesProvider).alertMode,
                             );
                           }
                           ref.read(databaseProvider).toggleTodo(todos[i].id, !todos[i].isCompleted);
@@ -818,6 +820,7 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
         title: 'Todo Reminder',
         body: _titleController.text.trim(),
         scheduledDate: _remindAt!,
+        alertMode: ref.read(notificationPreferencesProvider).alertMode,
       );
     } else {
       ref.read(notificationServiceProvider).cancelReminder(todoId);

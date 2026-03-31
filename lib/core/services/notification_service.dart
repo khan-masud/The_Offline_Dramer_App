@@ -4,6 +4,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/notification_preferences_provider.dart';
 
 final notificationServiceProvider = Provider<NotificationService>((ref) {
   return NotificationService();
@@ -72,6 +73,7 @@ class NotificationService {
     required String title,
     required String body,
     required DateTime scheduledDate,
+    ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
     if (scheduledDate.isBefore(DateTime.now())) return;
@@ -82,19 +84,99 @@ class NotificationService {
         title: title,
         body: body,
         scheduledDate: tz.TZDateTime.from(scheduledDate, tz.local),
-        notificationDetails: const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'todo_reminders',
-            'Todo Reminders',
-            channelDescription: 'Reminders for your upcoming tasks',
-            importance: Importance.high,
-            priority: Priority.high,
-          ),
+        notificationDetails: _buildDetails(
+          channelBaseId: 'todo_reminders',
+          channelBaseName: 'Todo Reminders',
+          channelDescription: 'Reminders for your upcoming tasks',
+          alertMode: alertMode,
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       );
     } catch (e) {
       debugPrint('Notification schedule error');
+    }
+  }
+
+  Future<void> scheduleRoutineReminder({
+    required int routineId,
+    required String title,
+    required String body,
+    required List<int> daysOfWeek, // 1 to 7
+    required int hour,
+    required int minute,
+    ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
+  }) async {
+    if (kIsWeb || !_isInitialized) return;
+
+    for (int day in daysOfWeek) {
+      final uniqueId = int.parse('10$routineId$day');
+      tz.TZDateTime scheduledDate = _nextInstanceOfDayAt(day, hour, minute);
+
+      try {
+        await _notificationsPlugin.zonedSchedule(
+          id: uniqueId,
+          title: title,
+          body: body,
+          scheduledDate: scheduledDate,
+          notificationDetails: _buildDetails(
+            channelBaseId: 'routine_reminders',
+            channelBaseName: 'Routine Reminders',
+            channelDescription: 'Reminders for your routines',
+            alertMode: alertMode,
+          ),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        );
+      } catch (e) {
+        debugPrint('Routine notification schedule error: $e');
+      }
+    }
+  }
+
+  tz.TZDateTime _nextInstanceOfDayAt(int dayOfWeek, int hour, int minute) {
+    tz.TZDateTime now = tz.TZDateTime.now(tz.local);
+    tz.TZDateTime scheduledDate = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute, 0);
+
+    while (scheduledDate.weekday != dayOfWeek || scheduledDate.isBefore(now)) {
+      scheduledDate = scheduledDate.add(const Duration(days: 1));
+    }
+    return scheduledDate;
+  }
+
+  NotificationDetails _buildDetails({
+    required String channelBaseId,
+    required String channelBaseName,
+    required String channelDescription,
+    required ReminderAlertMode alertMode,
+  }) {
+    final playSound =
+        alertMode == ReminderAlertMode.ring || alertMode == ReminderAlertMode.ringAndVibration;
+    final enableVibration =
+        alertMode == ReminderAlertMode.vibration || alertMode == ReminderAlertMode.ringAndVibration;
+
+    return NotificationDetails(
+      android: AndroidNotificationDetails(
+        '${channelBaseId}_${alertMode.name}',
+        '$channelBaseName (${_modeLabel(alertMode)})',
+        channelDescription: channelDescription,
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: playSound,
+        enableVibration: enableVibration,
+      ),
+    );
+  }
+
+  String _modeLabel(ReminderAlertMode mode) {
+    switch (mode) {
+      case ReminderAlertMode.ring:
+        return 'Ring';
+      case ReminderAlertMode.ringAndVibration:
+        return 'Ring+Vibration';
+      case ReminderAlertMode.vibration:
+        return 'Vibration';
+      case ReminderAlertMode.silent:
+        return 'Silent';
     }
   }
 
@@ -138,6 +220,17 @@ class NotificationService {
       await _notificationsPlugin.cancel(id: id);
     } catch (e) {
       debugPrint('Notification cancel error');
+    }
+  }
+
+  Future<void> cancelRoutineReminders(int routineId) async {
+    if (kIsWeb) return;
+    for (int day = 1; day <= 7; day++) {
+      try {
+        await _notificationsPlugin.cancel(id: int.parse('10$routineId$day'));
+      } catch (e) {
+        // ignore
+      }
     }
   }
 
