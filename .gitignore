@@ -1,0 +1,76 @@
+﻿# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# Visual Studio Code related
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Generate files (Uncomment if you want to ignore drift / riverpod / code generation files)
+# *.g.dart
+# *.freezed.dart
+# *.part.dart
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Windows related
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS related
+.AppleDouble
+.LSOverride
+
+# Local Database Files (SQLite / Drift output files for dev)
+*.sqlite
+*.sqlite-journal
+*.db
+tod.sqlite
+
+# Environment Variables
+.env
+.env.development
+.env.production
+
