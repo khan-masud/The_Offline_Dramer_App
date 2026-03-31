@@ -461,7 +461,7 @@ class AppDatabase extends _$AppDatabase {
       final prefix = tx.type == 'income' ? '+' : '-';
       activities.add({
         'type': 'transaction',
-        'title': '$prefixà§³${tx.amount.toStringAsFixed(0)} ${tx.title}',
+        'title': 'Transaction: $prefix${tx.amount.toStringAsFixed(0)} > ${tx.title}',
         'time': tx.createdAt,
         'icon': tx.type == 'income' ? 'income' : 'expense',
       });
@@ -502,7 +502,7 @@ class AppDatabase extends _$AppDatabase {
       final day = DateTime(tx.date.year, tx.date.month, tx.date.day);
       events.putIfAbsent(day, () => []).add({
         'type': 'transaction',
-        'title': '${tx.type == 'income' ? '+' : '-'}à§³${tx.amount.toStringAsFixed(0)} ${tx.title}',
+        'title': 'Transaction: ${tx.type == 'income' ? '+' : '-'}${tx.amount.toStringAsFixed(0)} > ${tx.title}',
         'txType': tx.type,
         'color': tx.type == 'income' ? 'success' : 'error',
       });
