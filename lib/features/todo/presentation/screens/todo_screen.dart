@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,10 +6,11 @@ import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../core/widgets/app_card.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/services/notification_service.dart';
 import '../../data/todo_provider.dart';
+import 'todo_timer_dialog.dart';
 
 class TodoScreen extends ConsumerWidget {
   const TodoScreen({super.key});
@@ -140,14 +140,25 @@ class TodoScreen extends ConsumerWidget {
                     itemBuilder: (context, i) {
                       return _TodoCard(
                         todo: todos[i],
-                        onToggle:
-                            () => ref
-                                .read(databaseProvider)
-                                .toggleTodo(todos[i].id, !todos[i].isCompleted),
-                        onDelete:
-                            () => ref
-                                .read(databaseProvider)
-                                .deleteTodo(todos[i].id),
+                        onToggle: () {
+                          if (!todos[i].isCompleted && todos[i].remindAt != null) {
+                            ref.read(notificationServiceProvider).cancelReminder(todos[i].id);
+                          } else if (todos[i].isCompleted &&
+                              todos[i].remindAt != null &&
+                              todos[i].remindAt!.isAfter(DateTime.now())) {
+                            ref.read(notificationServiceProvider).scheduleTodoReminder(
+                              id: todos[i].id,
+                              title: 'Todo Reminder',
+                              body: todos[i].title,
+                              scheduledDate: todos[i].remindAt!,
+                            );
+                          }
+                          ref.read(databaseProvider).toggleTodo(todos[i].id, !todos[i].isCompleted);
+                        },
+                        onDelete: () {
+                          ref.read(notificationServiceProvider).cancelReminder(todos[i].id);
+                          ref.read(databaseProvider).deleteTodo(todos[i].id);
+                        },
                         onEdit:
                             () =>
                                 _showAddEditSheet(context, ref, todo: todos[i]),
@@ -229,17 +240,13 @@ class _TodoCard extends ConsumerWidget {
         todo.dueDate!.isBefore(DateTime.now()) &&
         !todo.isCompleted;
 
-    List<dynamic> subTasks = [];
-    try {
-      if (todo.subTasks.isNotEmpty && todo.subTasks != '[]') {
-        subTasks = jsonDecode(todo.subTasks);
-      }
-    } catch (e) {
-      // ignore
-    }
+    final subTasksAsync = ref.watch(subTasksProvider(todo.id));
+    final subTasks = subTasksAsync.valueOrNull ?? [];
+
+    final totalFocusSeconds = ref.watch(totalFocusTimeProvider(todo.id));
 
     int completedSubTasks =
-        subTasks.where((st) => st['isCompleted'] == true).length;
+        subTasks.where((st) => st.isCompleted == true).length;
     int totalSubTasks = subTasks.length;
     double progress =
         totalSubTasks > 0 ? (completedSubTasks / totalSubTasks) : 0.0;
@@ -393,13 +400,22 @@ class _TodoCard extends ConsumerWidget {
 
                                         // Tags & Date
                                         if (todo.dueDate != null ||
+                                            todo.remindAt != null ||
                                             todo.category != null ||
-                                            todo.priority > 0) ...[
+                                            todo.priority > 0 ||
+                                            totalFocusSeconds > 0) ...[
                                           const SizedBox(height: 12),
                                           Wrap(
                                             spacing: 8,
                                             runSpacing: 8,
                                             children: [
+                                              if (totalFocusSeconds > 0)
+                                                _ModernChip(
+                                                  icon: Icons.timer_outlined,
+                                                  label:
+                                                      '${(totalFocusSeconds / 60).ceil()}m',
+                                                  color: AppColors.warning,
+                                                ),
                                               if (todo.priority > 0)
                                                 _ModernChip(
                                                   icon: Icons.flag_rounded,
@@ -432,6 +448,15 @@ class _TodoCard extends ConsumerWidget {
                                                               .onSurfaceVariant,
                                                   isOutlined: true,
                                                 ),
+                                              if (todo.remindAt != null)
+                                                _ModernChip(
+                                                  icon: Icons.notifications_active_rounded,
+                                                  label: DateFormat(
+                                                    'MMM d, h:mm a',
+                                                  ).format(todo.remindAt!),
+                                                  color: AppColors.warning,
+                                                  isOutlined: true,
+                                                ),
                                             ],
                                           ),
                                         ],
@@ -443,6 +468,23 @@ class _TodoCard extends ConsumerWidget {
                                   Column(
                                     mainAxisAlignment: MainAxisAlignment.start,
                                     children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.timer_outlined),
+                                        color: AppColors.warning,
+                                        onPressed: () {
+                                          showDialog(
+                                            context: context,
+                                            builder:
+                                                (context) =>
+                                                    TodoTimerDialog(todo: todo),
+                                          );
+                                        },
+                                        padding: const EdgeInsets.all(4),
+                                        constraints: const BoxConstraints(),
+                                        iconSize: 20,
+                                        tooltip: 'Start Focus',
+                                      ),
+                                      const SizedBox(height: 12),
                                       IconButton(
                                         icon: const Icon(Icons.edit_rounded),
                                         color: theme.colorScheme.primary,
@@ -537,22 +579,14 @@ class _TodoCard extends ConsumerWidget {
                                       const SizedBox(height: 12),
                                       ...List.generate(totalSubTasks, (index) {
                                         final st = subTasks[index];
-                                        final isStCompleted =
-                                            st['isCompleted'] == true;
+                                        final isStCompleted = st.isCompleted;
                                         return GestureDetector(
                                           onTap: () {
-                                            final newList = List.from(subTasks);
-                                            newList[index]['isCompleted'] =
-                                                !isStCompleted;
                                             ref
                                                 .read(databaseProvider)
-                                                .updateTodo(
-                                                  TodosCompanion(
-                                                    id: Value(todo.id),
-                                                    subTasks: Value(
-                                                      jsonEncode(newList),
-                                                    ),
-                                                  ),
+                                                .toggleSubTask(
+                                                  st.id,
+                                                  !isStCompleted,
                                                 );
                                           },
                                           behavior: HitTestBehavior.opaque,
@@ -586,7 +620,7 @@ class _TodoCard extends ConsumerWidget {
                                                 const SizedBox(width: 10),
                                                 Expanded(
                                                   child: Text(
-                                                    st['title'] ?? '',
+                                                    st.title,
                                                     style: AppTypography.bodyMedium.copyWith(
                                                       color:
                                                           isStCompleted
@@ -685,6 +719,7 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
   DateTime? _dueDate;
+  DateTime? _remindAt;
   int _priority = 0;
   String? _category;
 
@@ -697,22 +732,27 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
       _titleController.text = widget.todo!.title;
       _descController.text = widget.todo!.description ?? '';
       _dueDate = widget.todo!.dueDate;
+      _remindAt = widget.todo!.remindAt;
       _priority = widget.todo!.priority;
       _category = widget.todo!.category;
 
-      try {
-        if (widget.todo!.subTasks.isNotEmpty && widget.todo!.subTasks != '[]') {
-          final decoded = jsonDecode(widget.todo!.subTasks);
-          for (var item in decoded) {
-            _subTasks.add({
-              'title': item['title'],
-              'isCompleted': item['isCompleted'],
-            });
-          }
+      _loadSubTasks();
+    }
+  }
+
+  Future<void> _loadSubTasks() async {
+    final db = ref.read(databaseProvider);
+    final existing = await db.watchSubTasks(widget.todo!.id).first;
+    if (mounted) {
+      setState(() {
+        for (var st in existing) {
+          _subTasks.add({
+            'title': st.title,
+            'isCompleted': st.isCompleted,
+            'id': st.id,
+          });
         }
-      } catch (e) {
-        // ignore
-      }
+      });
     }
   }
 
@@ -723,7 +763,7 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
     super.dispose();
   }
 
-  void _save() {
+  void _save() async {
     if (_titleController.text.trim().isEmpty) return;
 
     final db = ref.read(databaseProvider);
@@ -731,28 +771,61 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
       title: Value(_titleController.text.trim()),
       description: Value(_descController.text.trim()),
       dueDate: Value(_dueDate),
+      remindAt: Value(_remindAt),
       priority: Value(_priority),
       category: Value(_category),
-      subTasks: Value(jsonEncode(_subTasks)),
     );
 
+    int todoId;
     if (widget.todo == null) {
-      db.addTodo(
+      todoId = await db.addTodo(
         companion.copyWith(
           createdAt: Value(DateTime.now()),
           updatedAt: Value(DateTime.now()),
         ),
       );
     } else {
-      db.updateTodo(
-        companion.copyWith(
-          id: Value(widget.todo!.id),
-          updatedAt: Value(DateTime.now()),
-        ),
+      todoId = widget.todo!.id;
+      await db.updateTodo(
+        companion.copyWith(id: Value(todoId), updatedAt: Value(DateTime.now())),
       );
+
+      // Delete existing subtasks first to recreate
+      final currentSubTasks = await db.watchSubTasks(todoId).first;
+      for (var st in currentSubTasks) {
+        await db.deleteSubTask(st.id);
+      }
     }
 
-    Navigator.pop(context);
+    // Save new structured subtasks
+    for (int i = 0; i < _subTasks.length; i++) {
+      if (_subTasks[i]['title'].trim().isNotEmpty) {
+        await db.addSubTask(
+          SubTasksCompanion(
+            todoId: Value(todoId),
+            title: Value(_subTasks[i]['title']),
+            isCompleted: Value(_subTasks[i]['isCompleted'] ?? false),
+            sortOrder: Value(i),
+            createdAt: Value(DateTime.now()),
+          ),
+        );
+      }
+    }
+
+    if (_remindAt != null) {
+      ref.read(notificationServiceProvider).scheduleTodoReminder(
+        id: todoId,
+        title: 'Todo Reminder',
+        body: _titleController.text.trim(),
+        scheduledDate: _remindAt!,
+      );
+    } else {
+      ref.read(notificationServiceProvider).cancelReminder(todoId);
+    }
+
+    if (mounted) {
+      Navigator.pop(context);
+    }
   }
 
   void _addSubTask() {
@@ -761,8 +834,13 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
     });
   }
 
-  void _updateSubTask(int index, String title) {
-    _subTasks[index]['title'] = title;
+  void _updateSubTask(int index, String title, bool isCompleted) {
+    setState(() {
+      _subTasks[index] = {
+        'title': title,
+        'isCompleted': isCompleted,
+      };
+    });
   }
 
   void _removeSubTask(int index) {
@@ -887,7 +965,7 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
                       Expanded(
                         child: TextFormField(
                           initialValue: _subTasks[index]['title'],
-                          onChanged: (val) => _updateSubTask(index, val),
+                          onChanged: (val) => _updateSubTask(index, val, _subTasks[index]['isCompleted'] ?? false),
                           style: AppTypography.bodyMedium,
                           decoration: InputDecoration(
                             hintText: 'Subtask item...',
@@ -965,6 +1043,51 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
                   if (time != null) {
                     setState(() {
                       _dueDate = DateTime(
+                        date.year,
+                        date.month,
+                        date.day,
+                        time.hour,
+                        time.minute,
+                      );
+                    });
+                  }
+                }
+              },
+            ),
+
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.notifications_active_rounded,
+                color: AppColors.warning,
+              ),
+              title: Text(
+                _remindAt == null
+                    ? 'Set Reminder'
+                    : DateFormat('MMM d, y • h:mm a').format(_remindAt!),
+                style: AppTypography.bodyMedium,
+              ),
+              trailing: _remindAt != null
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () => setState(() => _remindAt = null),
+                    )
+                  : null,
+              onTap: () async {
+                final date = await showDatePicker(
+                  context: context,
+                  initialDate: _remindAt ?? DateTime.now(),
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime.now().add(const Duration(days: 3650)),
+                );
+                if (date != null && mounted) {
+                  final time = await showTimePicker(
+                    context: context,
+                    initialTime: TimeOfDay.now(),
+                  );
+                  if (time != null) {
+                    setState(() {
+                      _remindAt = DateTime(
                         date.year,
                         date.month,
                         date.day,

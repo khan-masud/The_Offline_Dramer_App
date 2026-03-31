@@ -5,7 +5,6 @@ part 'app_database.g.dart';
 
 // ==================== TODOS ====================
 class Todos extends Table {
-    TextColumn get subTasks => text().withDefault(const Constant('[]'))();
   IntColumn get id => integer().autoIncrement()();
   TextColumn get title => text().withLength(min: 1, max: 500)();
   TextColumn get description => text().nullable()();
@@ -13,8 +12,32 @@ class Todos extends Table {
   BoolColumn get isCompleted => boolean().withDefault(const Constant(false))();
   IntColumn get priority => integer().withDefault(const Constant(0))(); // 0=none,1=low,2=medium,3=high
   TextColumn get category => text().nullable()();
+  
+  // New features for advanced task management
+  TextColumn get tags => text().withDefault(const Constant('[]'))(); // Store as JSON list
+  DateTimeColumn get remindAt => dateTime().nullable()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
+}
+
+class SubTasks extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get todoId => integer().references(Todos, #id)();
+  TextColumn get title => text().withLength(min: 1, max: 500)();
+  BoolColumn get isCompleted => boolean().withDefault(const Constant(false))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime()();
+}
+
+class FocusSessions extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get todoId => integer().nullable().references(Todos, #id)(); 
+  TextColumn get sessionType => text().withDefault(const Constant('pomodoro'))(); // 'pomodoro' or 'stopwatch'
+  IntColumn get durationSeconds => integer()();
+  DateTimeColumn get startTime => dateTime()();
+  DateTimeColumn get endTime => dateTime()();
 }
 
 // ==================== NOTES ====================
@@ -101,14 +124,15 @@ class HabitCompletions extends Table {
 
 // ==================== DATABASE ====================
 @DriftDatabase(tables: [
-  Todos, Notes, Routines, RoutineItems, RoutineCompletions,
+  Todos, SubTasks, FocusSessions, 
+  Notes, Routines, RoutineItems, RoutineCompletions,
   Transactions, MonthlyBudgets, Links, Habits, HabitCompletions,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(conn.connect());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -124,7 +148,14 @@ class AppDatabase extends _$AppDatabase {
           await m.createTable(habitCompletions);
         }
         if (from < 4) {
-          await m.addColumn(todos, todos.subTasks);
+          // Ignore as the column is removed in schema 5
+        }
+        if (from < 5) {
+          await m.createTable(subTasks);
+          await m.createTable(focusSessions);
+          await m.addColumn(todos, todos.tags);
+          await m.addColumn(todos, todos.remindAt);
+          await m.addColumn(todos, todos.sortOrder);
         }
     },
   );
@@ -150,13 +181,53 @@ class AppDatabase extends _$AppDatabase {
   Future<bool> updateTodo(TodosCompanion entry) =>
       (update(todos)..where((t) => t.id.equals(entry.id.value))).write(entry).then((rows) => rows > 0);
 
-  Future<int> deleteTodo(int id) =>
-      (delete(todos)..where((t) => t.id.equals(id))).go();
+  Future<int> deleteTodo(int id) async {
+    // Delete associated subtasks and focus sessions first
+    await (delete(subTasks)..where((t) => t.todoId.equals(id))).go();
+    await (delete(focusSessions)..where((t) => t.todoId.equals(id))).go();
+    return (delete(todos)..where((t) => t.id.equals(id))).go();
+  }
 
   Future<void> toggleTodo(int id, bool completed) =>
       (update(todos)..where((t) => t.id.equals(id))).write(
         TodosCompanion(isCompleted: Value(completed), updatedAt: Value(DateTime.now())),
       );
+
+  // === SUB-TASK QUERIES ===
+  Stream<List<SubTask>> watchSubTasks(int todoId) {
+    return (select(subTasks)
+          ..where((t) => t.todoId.equals(todoId))
+          ..orderBy([(t) => OrderingTerm.asc(t.sortOrder), (t) => OrderingTerm.asc(t.id)]))
+        .watch();
+  }
+
+  Future<int> addSubTask(SubTasksCompanion entry) => into(subTasks).insert(entry);
+
+  Future<bool> updateSubTask(SubTasksCompanion entry) =>
+      (update(subTasks)..where((t) => t.id.equals(entry.id.value))).write(entry).then((rows) => rows > 0);
+
+  Future<int> deleteSubTask(int id) =>
+      (delete(subTasks)..where((t) => t.id.equals(id))).go();
+
+  Future<void> toggleSubTask(int id, bool completed) =>
+      (update(subTasks)..where((t) => t.id.equals(id))).write(
+        SubTasksCompanion(isCompleted: Value(completed)),
+      );
+
+  // === FOCUS SESSION QUERIES ===
+  Stream<List<FocusSession>> watchFocusSessions(int todoId) {
+    return (select(focusSessions)
+          ..where((t) => t.todoId.equals(todoId))
+          ..orderBy([(t) => OrderingTerm.desc(t.startTime)]))
+        .watch();
+  }
+
+  Future<int> addFocusSession(FocusSessionsCompanion entry) => into(focusSessions).insert(entry);
+  
+  Future<int> getTotalFocusSeconds(int todoId) async {
+    final result = await (select(focusSessions)..where((t) => t.todoId.equals(todoId))).get();
+    return result.fold<int>(0, (sum, session) => sum + session.durationSeconds);
+  }
 
   // === NOTES QUERIES ===
   Stream<List<Note>> watchAllNotes({String? folder}) {

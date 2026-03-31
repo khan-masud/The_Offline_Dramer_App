@@ -31,3 +31,23 @@ final todoStatsProvider = StreamProvider<({int total, int completed, int pending
     pending: todos.where((t) => !t.isCompleted).length,
   ));
 });
+
+// --- SUBTASKS ---
+final subTasksProvider = StreamProvider.family<List<SubTask>, int>((ref, todoId) {
+  final db = ref.watch(databaseProvider);
+  return db.watchSubTasks(todoId);
+});
+
+// --- FOCUS SESSIONS ---
+final focusSessionsProvider = StreamProvider.family<List<FocusSession>, int>((ref, todoId) {
+  final db = ref.watch(databaseProvider);
+  return db.watchFocusSessions(todoId);
+});
+
+final totalFocusTimeProvider = Provider.family<int, int>((ref, todoId) {
+  final sessionsAsync = ref.watch(focusSessionsProvider(todoId));
+  return sessionsAsync.maybeWhen(
+    data: (sessions) => sessions.fold<int>(0, (sum, s) => sum + s.durationSeconds),
+    orElse: () => 0,
+  );
+});

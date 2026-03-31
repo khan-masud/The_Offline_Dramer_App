@@ -8,18 +8,6 @@ class $TodosTable extends Todos with TableInfo<$TodosTable, Todo> {
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
   $TodosTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _subTasksMeta = const VerificationMeta(
-    'subTasks',
-  );
-  @override
-  late final GeneratedColumn<String> subTasks = GeneratedColumn<String>(
-    'sub_tasks',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    defaultValue: const Constant('[]'),
-  );
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<int> id = GeneratedColumn<int>(
@@ -106,6 +94,39 @@ class $TodosTable extends Todos with TableInfo<$TodosTable, Todo> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _tagsMeta = const VerificationMeta('tags');
+  @override
+  late final GeneratedColumn<String> tags = GeneratedColumn<String>(
+    'tags',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _remindAtMeta = const VerificationMeta(
+    'remindAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> remindAt = GeneratedColumn<DateTime>(
+    'remind_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -130,7 +151,6 @@ class $TodosTable extends Todos with TableInfo<$TodosTable, Todo> {
   );
   @override
   List<GeneratedColumn> get $columns => [
-    subTasks,
     id,
     title,
     description,
@@ -138,6 +158,9 @@ class $TodosTable extends Todos with TableInfo<$TodosTable, Todo> {
     isCompleted,
     priority,
     category,
+    tags,
+    remindAt,
+    sortOrder,
     createdAt,
     updatedAt,
   ];
@@ -153,12 +176,6 @@ class $TodosTable extends Todos with TableInfo<$TodosTable, Todo> {
   }) {
     final context = VerificationContext();
     final data = instance.toColumns(true);
-    if (data.containsKey('sub_tasks')) {
-      context.handle(
-        _subTasksMeta,
-        subTasks.isAcceptableOrUnknown(data['sub_tasks']!, _subTasksMeta),
-      );
-    }
     if (data.containsKey('id')) {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     }
@@ -206,6 +223,24 @@ class $TodosTable extends Todos with TableInfo<$TodosTable, Todo> {
         category.isAcceptableOrUnknown(data['category']!, _categoryMeta),
       );
     }
+    if (data.containsKey('tags')) {
+      context.handle(
+        _tagsMeta,
+        tags.isAcceptableOrUnknown(data['tags']!, _tagsMeta),
+      );
+    }
+    if (data.containsKey('remind_at')) {
+      context.handle(
+        _remindAtMeta,
+        remindAt.isAcceptableOrUnknown(data['remind_at']!, _remindAtMeta),
+      );
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -231,11 +266,6 @@ class $TodosTable extends Todos with TableInfo<$TodosTable, Todo> {
   Todo map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
     return Todo(
-      subTasks:
-          attachedDatabase.typeMapping.read(
-            DriftSqlType.string,
-            data['${effectivePrefix}sub_tasks'],
-          )!,
       id:
           attachedDatabase.typeMapping.read(
             DriftSqlType.int,
@@ -268,6 +298,20 @@ class $TodosTable extends Todos with TableInfo<$TodosTable, Todo> {
         DriftSqlType.string,
         data['${effectivePrefix}category'],
       ),
+      tags:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.string,
+            data['${effectivePrefix}tags'],
+          )!,
+      remindAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}remind_at'],
+      ),
+      sortOrder:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.int,
+            data['${effectivePrefix}sort_order'],
+          )!,
       createdAt:
           attachedDatabase.typeMapping.read(
             DriftSqlType.dateTime,
@@ -288,7 +332,6 @@ class $TodosTable extends Todos with TableInfo<$TodosTable, Todo> {
 }
 
 class Todo extends DataClass implements Insertable<Todo> {
-  final String subTasks;
   final int id;
   final String title;
   final String? description;
@@ -296,10 +339,12 @@ class Todo extends DataClass implements Insertable<Todo> {
   final bool isCompleted;
   final int priority;
   final String? category;
+  final String tags;
+  final DateTime? remindAt;
+  final int sortOrder;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Todo({
-    required this.subTasks,
     required this.id,
     required this.title,
     this.description,
@@ -307,13 +352,15 @@ class Todo extends DataClass implements Insertable<Todo> {
     required this.isCompleted,
     required this.priority,
     this.category,
+    required this.tags,
+    this.remindAt,
+    required this.sortOrder,
     required this.createdAt,
     required this.updatedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    map['sub_tasks'] = Variable<String>(subTasks);
     map['id'] = Variable<int>(id);
     map['title'] = Variable<String>(title);
     if (!nullToAbsent || description != null) {
@@ -327,6 +374,11 @@ class Todo extends DataClass implements Insertable<Todo> {
     if (!nullToAbsent || category != null) {
       map['category'] = Variable<String>(category);
     }
+    map['tags'] = Variable<String>(tags);
+    if (!nullToAbsent || remindAt != null) {
+      map['remind_at'] = Variable<DateTime>(remindAt);
+    }
+    map['sort_order'] = Variable<int>(sortOrder);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -334,7 +386,6 @@ class Todo extends DataClass implements Insertable<Todo> {
 
   TodosCompanion toCompanion(bool nullToAbsent) {
     return TodosCompanion(
-      subTasks: Value(subTasks),
       id: Value(id),
       title: Value(title),
       description:
@@ -351,6 +402,12 @@ class Todo extends DataClass implements Insertable<Todo> {
           category == null && nullToAbsent
               ? const Value.absent()
               : Value(category),
+      tags: Value(tags),
+      remindAt:
+          remindAt == null && nullToAbsent
+              ? const Value.absent()
+              : Value(remindAt),
+      sortOrder: Value(sortOrder),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -362,7 +419,6 @@ class Todo extends DataClass implements Insertable<Todo> {
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return Todo(
-      subTasks: serializer.fromJson<String>(json['subTasks']),
       id: serializer.fromJson<int>(json['id']),
       title: serializer.fromJson<String>(json['title']),
       description: serializer.fromJson<String?>(json['description']),
@@ -370,6 +426,9 @@ class Todo extends DataClass implements Insertable<Todo> {
       isCompleted: serializer.fromJson<bool>(json['isCompleted']),
       priority: serializer.fromJson<int>(json['priority']),
       category: serializer.fromJson<String?>(json['category']),
+      tags: serializer.fromJson<String>(json['tags']),
+      remindAt: serializer.fromJson<DateTime?>(json['remindAt']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -378,7 +437,6 @@ class Todo extends DataClass implements Insertable<Todo> {
   Map<String, dynamic> toJson({ValueSerializer? serializer}) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
-      'subTasks': serializer.toJson<String>(subTasks),
       'id': serializer.toJson<int>(id),
       'title': serializer.toJson<String>(title),
       'description': serializer.toJson<String?>(description),
@@ -386,13 +444,15 @@ class Todo extends DataClass implements Insertable<Todo> {
       'isCompleted': serializer.toJson<bool>(isCompleted),
       'priority': serializer.toJson<int>(priority),
       'category': serializer.toJson<String?>(category),
+      'tags': serializer.toJson<String>(tags),
+      'remindAt': serializer.toJson<DateTime?>(remindAt),
+      'sortOrder': serializer.toJson<int>(sortOrder),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
   }
 
   Todo copyWith({
-    String? subTasks,
     int? id,
     String? title,
     Value<String?> description = const Value.absent(),
@@ -400,10 +460,12 @@ class Todo extends DataClass implements Insertable<Todo> {
     bool? isCompleted,
     int? priority,
     Value<String?> category = const Value.absent(),
+    String? tags,
+    Value<DateTime?> remindAt = const Value.absent(),
+    int? sortOrder,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Todo(
-    subTasks: subTasks ?? this.subTasks,
     id: id ?? this.id,
     title: title ?? this.title,
     description: description.present ? description.value : this.description,
@@ -411,12 +473,14 @@ class Todo extends DataClass implements Insertable<Todo> {
     isCompleted: isCompleted ?? this.isCompleted,
     priority: priority ?? this.priority,
     category: category.present ? category.value : this.category,
+    tags: tags ?? this.tags,
+    remindAt: remindAt.present ? remindAt.value : this.remindAt,
+    sortOrder: sortOrder ?? this.sortOrder,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
   Todo copyWithCompanion(TodosCompanion data) {
     return Todo(
-      subTasks: data.subTasks.present ? data.subTasks.value : this.subTasks,
       id: data.id.present ? data.id.value : this.id,
       title: data.title.present ? data.title.value : this.title,
       description:
@@ -426,6 +490,9 @@ class Todo extends DataClass implements Insertable<Todo> {
           data.isCompleted.present ? data.isCompleted.value : this.isCompleted,
       priority: data.priority.present ? data.priority.value : this.priority,
       category: data.category.present ? data.category.value : this.category,
+      tags: data.tags.present ? data.tags.value : this.tags,
+      remindAt: data.remindAt.present ? data.remindAt.value : this.remindAt,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -434,7 +501,6 @@ class Todo extends DataClass implements Insertable<Todo> {
   @override
   String toString() {
     return (StringBuffer('Todo(')
-          ..write('subTasks: $subTasks, ')
           ..write('id: $id, ')
           ..write('title: $title, ')
           ..write('description: $description, ')
@@ -442,6 +508,9 @@ class Todo extends DataClass implements Insertable<Todo> {
           ..write('isCompleted: $isCompleted, ')
           ..write('priority: $priority, ')
           ..write('category: $category, ')
+          ..write('tags: $tags, ')
+          ..write('remindAt: $remindAt, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -450,7 +519,6 @@ class Todo extends DataClass implements Insertable<Todo> {
 
   @override
   int get hashCode => Object.hash(
-    subTasks,
     id,
     title,
     description,
@@ -458,6 +526,9 @@ class Todo extends DataClass implements Insertable<Todo> {
     isCompleted,
     priority,
     category,
+    tags,
+    remindAt,
+    sortOrder,
     createdAt,
     updatedAt,
   );
@@ -465,7 +536,6 @@ class Todo extends DataClass implements Insertable<Todo> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is Todo &&
-          other.subTasks == this.subTasks &&
           other.id == this.id &&
           other.title == this.title &&
           other.description == this.description &&
@@ -473,12 +543,14 @@ class Todo extends DataClass implements Insertable<Todo> {
           other.isCompleted == this.isCompleted &&
           other.priority == this.priority &&
           other.category == this.category &&
+          other.tags == this.tags &&
+          other.remindAt == this.remindAt &&
+          other.sortOrder == this.sortOrder &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
 
 class TodosCompanion extends UpdateCompanion<Todo> {
-  final Value<String> subTasks;
   final Value<int> id;
   final Value<String> title;
   final Value<String?> description;
@@ -486,10 +558,12 @@ class TodosCompanion extends UpdateCompanion<Todo> {
   final Value<bool> isCompleted;
   final Value<int> priority;
   final Value<String?> category;
+  final Value<String> tags;
+  final Value<DateTime?> remindAt;
+  final Value<int> sortOrder;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   const TodosCompanion({
-    this.subTasks = const Value.absent(),
     this.id = const Value.absent(),
     this.title = const Value.absent(),
     this.description = const Value.absent(),
@@ -497,11 +571,13 @@ class TodosCompanion extends UpdateCompanion<Todo> {
     this.isCompleted = const Value.absent(),
     this.priority = const Value.absent(),
     this.category = const Value.absent(),
+    this.tags = const Value.absent(),
+    this.remindAt = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
   TodosCompanion.insert({
-    this.subTasks = const Value.absent(),
     this.id = const Value.absent(),
     required String title,
     this.description = const Value.absent(),
@@ -509,13 +585,15 @@ class TodosCompanion extends UpdateCompanion<Todo> {
     this.isCompleted = const Value.absent(),
     this.priority = const Value.absent(),
     this.category = const Value.absent(),
+    this.tags = const Value.absent(),
+    this.remindAt = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
   }) : title = Value(title),
        createdAt = Value(createdAt),
        updatedAt = Value(updatedAt);
   static Insertable<Todo> custom({
-    Expression<String>? subTasks,
     Expression<int>? id,
     Expression<String>? title,
     Expression<String>? description,
@@ -523,11 +601,13 @@ class TodosCompanion extends UpdateCompanion<Todo> {
     Expression<bool>? isCompleted,
     Expression<int>? priority,
     Expression<String>? category,
+    Expression<String>? tags,
+    Expression<DateTime>? remindAt,
+    Expression<int>? sortOrder,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
   }) {
     return RawValuesInsertable({
-      if (subTasks != null) 'sub_tasks': subTasks,
       if (id != null) 'id': id,
       if (title != null) 'title': title,
       if (description != null) 'description': description,
@@ -535,13 +615,15 @@ class TodosCompanion extends UpdateCompanion<Todo> {
       if (isCompleted != null) 'is_completed': isCompleted,
       if (priority != null) 'priority': priority,
       if (category != null) 'category': category,
+      if (tags != null) 'tags': tags,
+      if (remindAt != null) 'remind_at': remindAt,
+      if (sortOrder != null) 'sort_order': sortOrder,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
   }
 
   TodosCompanion copyWith({
-    Value<String>? subTasks,
     Value<int>? id,
     Value<String>? title,
     Value<String?>? description,
@@ -549,11 +631,13 @@ class TodosCompanion extends UpdateCompanion<Todo> {
     Value<bool>? isCompleted,
     Value<int>? priority,
     Value<String?>? category,
+    Value<String>? tags,
+    Value<DateTime?>? remindAt,
+    Value<int>? sortOrder,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
   }) {
     return TodosCompanion(
-      subTasks: subTasks ?? this.subTasks,
       id: id ?? this.id,
       title: title ?? this.title,
       description: description ?? this.description,
@@ -561,6 +645,9 @@ class TodosCompanion extends UpdateCompanion<Todo> {
       isCompleted: isCompleted ?? this.isCompleted,
       priority: priority ?? this.priority,
       category: category ?? this.category,
+      tags: tags ?? this.tags,
+      remindAt: remindAt ?? this.remindAt,
+      sortOrder: sortOrder ?? this.sortOrder,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -569,9 +656,6 @@ class TodosCompanion extends UpdateCompanion<Todo> {
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
-    if (subTasks.present) {
-      map['sub_tasks'] = Variable<String>(subTasks.value);
-    }
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
@@ -593,6 +677,15 @@ class TodosCompanion extends UpdateCompanion<Todo> {
     if (category.present) {
       map['category'] = Variable<String>(category.value);
     }
+    if (tags.present) {
+      map['tags'] = Variable<String>(tags.value);
+    }
+    if (remindAt.present) {
+      map['remind_at'] = Variable<DateTime>(remindAt.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -605,7 +698,6 @@ class TodosCompanion extends UpdateCompanion<Todo> {
   @override
   String toString() {
     return (StringBuffer('TodosCompanion(')
-          ..write('subTasks: $subTasks, ')
           ..write('id: $id, ')
           ..write('title: $title, ')
           ..write('description: $description, ')
@@ -613,8 +705,836 @@ class TodosCompanion extends UpdateCompanion<Todo> {
           ..write('isCompleted: $isCompleted, ')
           ..write('priority: $priority, ')
           ..write('category: $category, ')
+          ..write('tags: $tags, ')
+          ..write('remindAt: $remindAt, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SubTasksTable extends SubTasks with TableInfo<$SubTasksTable, SubTask> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SubTasksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _todoIdMeta = const VerificationMeta('todoId');
+  @override
+  late final GeneratedColumn<int> todoId = GeneratedColumn<int>(
+    'todo_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES todos (id)',
+    ),
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    additionalChecks: GeneratedColumn.checkTextLength(
+      minTextLength: 1,
+      maxTextLength: 500,
+    ),
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isCompletedMeta = const VerificationMeta(
+    'isCompleted',
+  );
+  @override
+  late final GeneratedColumn<bool> isCompleted = GeneratedColumn<bool>(
+    'is_completed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_completed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    todoId,
+    title,
+    isCompleted,
+    sortOrder,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'sub_tasks';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SubTask> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('todo_id')) {
+      context.handle(
+        _todoIdMeta,
+        todoId.isAcceptableOrUnknown(data['todo_id']!, _todoIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_todoIdMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('is_completed')) {
+      context.handle(
+        _isCompletedMeta,
+        isCompleted.isAcceptableOrUnknown(
+          data['is_completed']!,
+          _isCompletedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  SubTask map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SubTask(
+      id:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.int,
+            data['${effectivePrefix}id'],
+          )!,
+      todoId:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.int,
+            data['${effectivePrefix}todo_id'],
+          )!,
+      title:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.string,
+            data['${effectivePrefix}title'],
+          )!,
+      isCompleted:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.bool,
+            data['${effectivePrefix}is_completed'],
+          )!,
+      sortOrder:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.int,
+            data['${effectivePrefix}sort_order'],
+          )!,
+      createdAt:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.dateTime,
+            data['${effectivePrefix}created_at'],
+          )!,
+    );
+  }
+
+  @override
+  $SubTasksTable createAlias(String alias) {
+    return $SubTasksTable(attachedDatabase, alias);
+  }
+}
+
+class SubTask extends DataClass implements Insertable<SubTask> {
+  final int id;
+  final int todoId;
+  final String title;
+  final bool isCompleted;
+  final int sortOrder;
+  final DateTime createdAt;
+  const SubTask({
+    required this.id,
+    required this.todoId,
+    required this.title,
+    required this.isCompleted,
+    required this.sortOrder,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['todo_id'] = Variable<int>(todoId);
+    map['title'] = Variable<String>(title);
+    map['is_completed'] = Variable<bool>(isCompleted);
+    map['sort_order'] = Variable<int>(sortOrder);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  SubTasksCompanion toCompanion(bool nullToAbsent) {
+    return SubTasksCompanion(
+      id: Value(id),
+      todoId: Value(todoId),
+      title: Value(title),
+      isCompleted: Value(isCompleted),
+      sortOrder: Value(sortOrder),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory SubTask.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SubTask(
+      id: serializer.fromJson<int>(json['id']),
+      todoId: serializer.fromJson<int>(json['todoId']),
+      title: serializer.fromJson<String>(json['title']),
+      isCompleted: serializer.fromJson<bool>(json['isCompleted']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'todoId': serializer.toJson<int>(todoId),
+      'title': serializer.toJson<String>(title),
+      'isCompleted': serializer.toJson<bool>(isCompleted),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  SubTask copyWith({
+    int? id,
+    int? todoId,
+    String? title,
+    bool? isCompleted,
+    int? sortOrder,
+    DateTime? createdAt,
+  }) => SubTask(
+    id: id ?? this.id,
+    todoId: todoId ?? this.todoId,
+    title: title ?? this.title,
+    isCompleted: isCompleted ?? this.isCompleted,
+    sortOrder: sortOrder ?? this.sortOrder,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  SubTask copyWithCompanion(SubTasksCompanion data) {
+    return SubTask(
+      id: data.id.present ? data.id.value : this.id,
+      todoId: data.todoId.present ? data.todoId.value : this.todoId,
+      title: data.title.present ? data.title.value : this.title,
+      isCompleted:
+          data.isCompleted.present ? data.isCompleted.value : this.isCompleted,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SubTask(')
+          ..write('id: $id, ')
+          ..write('todoId: $todoId, ')
+          ..write('title: $title, ')
+          ..write('isCompleted: $isCompleted, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, todoId, title, isCompleted, sortOrder, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SubTask &&
+          other.id == this.id &&
+          other.todoId == this.todoId &&
+          other.title == this.title &&
+          other.isCompleted == this.isCompleted &&
+          other.sortOrder == this.sortOrder &&
+          other.createdAt == this.createdAt);
+}
+
+class SubTasksCompanion extends UpdateCompanion<SubTask> {
+  final Value<int> id;
+  final Value<int> todoId;
+  final Value<String> title;
+  final Value<bool> isCompleted;
+  final Value<int> sortOrder;
+  final Value<DateTime> createdAt;
+  const SubTasksCompanion({
+    this.id = const Value.absent(),
+    this.todoId = const Value.absent(),
+    this.title = const Value.absent(),
+    this.isCompleted = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    this.createdAt = const Value.absent(),
+  });
+  SubTasksCompanion.insert({
+    this.id = const Value.absent(),
+    required int todoId,
+    required String title,
+    this.isCompleted = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+    required DateTime createdAt,
+  }) : todoId = Value(todoId),
+       title = Value(title),
+       createdAt = Value(createdAt);
+  static Insertable<SubTask> custom({
+    Expression<int>? id,
+    Expression<int>? todoId,
+    Expression<String>? title,
+    Expression<bool>? isCompleted,
+    Expression<int>? sortOrder,
+    Expression<DateTime>? createdAt,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (todoId != null) 'todo_id': todoId,
+      if (title != null) 'title': title,
+      if (isCompleted != null) 'is_completed': isCompleted,
+      if (sortOrder != null) 'sort_order': sortOrder,
+      if (createdAt != null) 'created_at': createdAt,
+    });
+  }
+
+  SubTasksCompanion copyWith({
+    Value<int>? id,
+    Value<int>? todoId,
+    Value<String>? title,
+    Value<bool>? isCompleted,
+    Value<int>? sortOrder,
+    Value<DateTime>? createdAt,
+  }) {
+    return SubTasksCompanion(
+      id: id ?? this.id,
+      todoId: todoId ?? this.todoId,
+      title: title ?? this.title,
+      isCompleted: isCompleted ?? this.isCompleted,
+      sortOrder: sortOrder ?? this.sortOrder,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (todoId.present) {
+      map['todo_id'] = Variable<int>(todoId.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (isCompleted.present) {
+      map['is_completed'] = Variable<bool>(isCompleted.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SubTasksCompanion(')
+          ..write('id: $id, ')
+          ..write('todoId: $todoId, ')
+          ..write('title: $title, ')
+          ..write('isCompleted: $isCompleted, ')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $FocusSessionsTable extends FocusSessions
+    with TableInfo<$FocusSessionsTable, FocusSession> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FocusSessionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _todoIdMeta = const VerificationMeta('todoId');
+  @override
+  late final GeneratedColumn<int> todoId = GeneratedColumn<int>(
+    'todo_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES todos (id)',
+    ),
+  );
+  static const VerificationMeta _sessionTypeMeta = const VerificationMeta(
+    'sessionType',
+  );
+  @override
+  late final GeneratedColumn<String> sessionType = GeneratedColumn<String>(
+    'session_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('pomodoro'),
+  );
+  static const VerificationMeta _durationSecondsMeta = const VerificationMeta(
+    'durationSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> durationSeconds = GeneratedColumn<int>(
+    'duration_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _startTimeMeta = const VerificationMeta(
+    'startTime',
+  );
+  @override
+  late final GeneratedColumn<DateTime> startTime = GeneratedColumn<DateTime>(
+    'start_time',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _endTimeMeta = const VerificationMeta(
+    'endTime',
+  );
+  @override
+  late final GeneratedColumn<DateTime> endTime = GeneratedColumn<DateTime>(
+    'end_time',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    todoId,
+    sessionType,
+    durationSeconds,
+    startTime,
+    endTime,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'focus_sessions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FocusSession> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('todo_id')) {
+      context.handle(
+        _todoIdMeta,
+        todoId.isAcceptableOrUnknown(data['todo_id']!, _todoIdMeta),
+      );
+    }
+    if (data.containsKey('session_type')) {
+      context.handle(
+        _sessionTypeMeta,
+        sessionType.isAcceptableOrUnknown(
+          data['session_type']!,
+          _sessionTypeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('duration_seconds')) {
+      context.handle(
+        _durationSecondsMeta,
+        durationSeconds.isAcceptableOrUnknown(
+          data['duration_seconds']!,
+          _durationSecondsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_durationSecondsMeta);
+    }
+    if (data.containsKey('start_time')) {
+      context.handle(
+        _startTimeMeta,
+        startTime.isAcceptableOrUnknown(data['start_time']!, _startTimeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_startTimeMeta);
+    }
+    if (data.containsKey('end_time')) {
+      context.handle(
+        _endTimeMeta,
+        endTime.isAcceptableOrUnknown(data['end_time']!, _endTimeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_endTimeMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  FocusSession map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FocusSession(
+      id:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.int,
+            data['${effectivePrefix}id'],
+          )!,
+      todoId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}todo_id'],
+      ),
+      sessionType:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.string,
+            data['${effectivePrefix}session_type'],
+          )!,
+      durationSeconds:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.int,
+            data['${effectivePrefix}duration_seconds'],
+          )!,
+      startTime:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.dateTime,
+            data['${effectivePrefix}start_time'],
+          )!,
+      endTime:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.dateTime,
+            data['${effectivePrefix}end_time'],
+          )!,
+    );
+  }
+
+  @override
+  $FocusSessionsTable createAlias(String alias) {
+    return $FocusSessionsTable(attachedDatabase, alias);
+  }
+}
+
+class FocusSession extends DataClass implements Insertable<FocusSession> {
+  final int id;
+  final int? todoId;
+  final String sessionType;
+  final int durationSeconds;
+  final DateTime startTime;
+  final DateTime endTime;
+  const FocusSession({
+    required this.id,
+    this.todoId,
+    required this.sessionType,
+    required this.durationSeconds,
+    required this.startTime,
+    required this.endTime,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    if (!nullToAbsent || todoId != null) {
+      map['todo_id'] = Variable<int>(todoId);
+    }
+    map['session_type'] = Variable<String>(sessionType);
+    map['duration_seconds'] = Variable<int>(durationSeconds);
+    map['start_time'] = Variable<DateTime>(startTime);
+    map['end_time'] = Variable<DateTime>(endTime);
+    return map;
+  }
+
+  FocusSessionsCompanion toCompanion(bool nullToAbsent) {
+    return FocusSessionsCompanion(
+      id: Value(id),
+      todoId:
+          todoId == null && nullToAbsent ? const Value.absent() : Value(todoId),
+      sessionType: Value(sessionType),
+      durationSeconds: Value(durationSeconds),
+      startTime: Value(startTime),
+      endTime: Value(endTime),
+    );
+  }
+
+  factory FocusSession.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FocusSession(
+      id: serializer.fromJson<int>(json['id']),
+      todoId: serializer.fromJson<int?>(json['todoId']),
+      sessionType: serializer.fromJson<String>(json['sessionType']),
+      durationSeconds: serializer.fromJson<int>(json['durationSeconds']),
+      startTime: serializer.fromJson<DateTime>(json['startTime']),
+      endTime: serializer.fromJson<DateTime>(json['endTime']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'todoId': serializer.toJson<int?>(todoId),
+      'sessionType': serializer.toJson<String>(sessionType),
+      'durationSeconds': serializer.toJson<int>(durationSeconds),
+      'startTime': serializer.toJson<DateTime>(startTime),
+      'endTime': serializer.toJson<DateTime>(endTime),
+    };
+  }
+
+  FocusSession copyWith({
+    int? id,
+    Value<int?> todoId = const Value.absent(),
+    String? sessionType,
+    int? durationSeconds,
+    DateTime? startTime,
+    DateTime? endTime,
+  }) => FocusSession(
+    id: id ?? this.id,
+    todoId: todoId.present ? todoId.value : this.todoId,
+    sessionType: sessionType ?? this.sessionType,
+    durationSeconds: durationSeconds ?? this.durationSeconds,
+    startTime: startTime ?? this.startTime,
+    endTime: endTime ?? this.endTime,
+  );
+  FocusSession copyWithCompanion(FocusSessionsCompanion data) {
+    return FocusSession(
+      id: data.id.present ? data.id.value : this.id,
+      todoId: data.todoId.present ? data.todoId.value : this.todoId,
+      sessionType:
+          data.sessionType.present ? data.sessionType.value : this.sessionType,
+      durationSeconds:
+          data.durationSeconds.present
+              ? data.durationSeconds.value
+              : this.durationSeconds,
+      startTime: data.startTime.present ? data.startTime.value : this.startTime,
+      endTime: data.endTime.present ? data.endTime.value : this.endTime,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusSession(')
+          ..write('id: $id, ')
+          ..write('todoId: $todoId, ')
+          ..write('sessionType: $sessionType, ')
+          ..write('durationSeconds: $durationSeconds, ')
+          ..write('startTime: $startTime, ')
+          ..write('endTime: $endTime')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, todoId, sessionType, durationSeconds, startTime, endTime);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FocusSession &&
+          other.id == this.id &&
+          other.todoId == this.todoId &&
+          other.sessionType == this.sessionType &&
+          other.durationSeconds == this.durationSeconds &&
+          other.startTime == this.startTime &&
+          other.endTime == this.endTime);
+}
+
+class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
+  final Value<int> id;
+  final Value<int?> todoId;
+  final Value<String> sessionType;
+  final Value<int> durationSeconds;
+  final Value<DateTime> startTime;
+  final Value<DateTime> endTime;
+  const FocusSessionsCompanion({
+    this.id = const Value.absent(),
+    this.todoId = const Value.absent(),
+    this.sessionType = const Value.absent(),
+    this.durationSeconds = const Value.absent(),
+    this.startTime = const Value.absent(),
+    this.endTime = const Value.absent(),
+  });
+  FocusSessionsCompanion.insert({
+    this.id = const Value.absent(),
+    this.todoId = const Value.absent(),
+    this.sessionType = const Value.absent(),
+    required int durationSeconds,
+    required DateTime startTime,
+    required DateTime endTime,
+  }) : durationSeconds = Value(durationSeconds),
+       startTime = Value(startTime),
+       endTime = Value(endTime);
+  static Insertable<FocusSession> custom({
+    Expression<int>? id,
+    Expression<int>? todoId,
+    Expression<String>? sessionType,
+    Expression<int>? durationSeconds,
+    Expression<DateTime>? startTime,
+    Expression<DateTime>? endTime,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (todoId != null) 'todo_id': todoId,
+      if (sessionType != null) 'session_type': sessionType,
+      if (durationSeconds != null) 'duration_seconds': durationSeconds,
+      if (startTime != null) 'start_time': startTime,
+      if (endTime != null) 'end_time': endTime,
+    });
+  }
+
+  FocusSessionsCompanion copyWith({
+    Value<int>? id,
+    Value<int?>? todoId,
+    Value<String>? sessionType,
+    Value<int>? durationSeconds,
+    Value<DateTime>? startTime,
+    Value<DateTime>? endTime,
+  }) {
+    return FocusSessionsCompanion(
+      id: id ?? this.id,
+      todoId: todoId ?? this.todoId,
+      sessionType: sessionType ?? this.sessionType,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (todoId.present) {
+      map['todo_id'] = Variable<int>(todoId.value);
+    }
+    if (sessionType.present) {
+      map['session_type'] = Variable<String>(sessionType.value);
+    }
+    if (durationSeconds.present) {
+      map['duration_seconds'] = Variable<int>(durationSeconds.value);
+    }
+    if (startTime.present) {
+      map['start_time'] = Variable<DateTime>(startTime.value);
+    }
+    if (endTime.present) {
+      map['end_time'] = Variable<DateTime>(endTime.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusSessionsCompanion(')
+          ..write('id: $id, ')
+          ..write('todoId: $todoId, ')
+          ..write('sessionType: $sessionType, ')
+          ..write('durationSeconds: $durationSeconds, ')
+          ..write('startTime: $startTime, ')
+          ..write('endTime: $endTime')
           ..write(')'))
         .toString();
   }
@@ -4034,6 +4954,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $TodosTable todos = $TodosTable(this);
+  late final $SubTasksTable subTasks = $SubTasksTable(this);
+  late final $FocusSessionsTable focusSessions = $FocusSessionsTable(this);
   late final $NotesTable notes = $NotesTable(this);
   late final $RoutinesTable routines = $RoutinesTable(this);
   late final $RoutineItemsTable routineItems = $RoutineItemsTable(this);
@@ -4052,6 +4974,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     todos,
+    subTasks,
+    focusSessions,
     notes,
     routines,
     routineItems,
@@ -4066,7 +4990,6 @@ abstract class _$AppDatabase extends GeneratedDatabase {
 
 typedef $$TodosTableCreateCompanionBuilder =
     TodosCompanion Function({
-      Value<String> subTasks,
       Value<int> id,
       required String title,
       Value<String?> description,
@@ -4074,12 +4997,14 @@ typedef $$TodosTableCreateCompanionBuilder =
       Value<bool> isCompleted,
       Value<int> priority,
       Value<String?> category,
+      Value<String> tags,
+      Value<DateTime?> remindAt,
+      Value<int> sortOrder,
       required DateTime createdAt,
       required DateTime updatedAt,
     });
 typedef $$TodosTableUpdateCompanionBuilder =
     TodosCompanion Function({
-      Value<String> subTasks,
       Value<int> id,
       Value<String> title,
       Value<String?> description,
@@ -4087,9 +5012,54 @@ typedef $$TodosTableUpdateCompanionBuilder =
       Value<bool> isCompleted,
       Value<int> priority,
       Value<String?> category,
+      Value<String> tags,
+      Value<DateTime?> remindAt,
+      Value<int> sortOrder,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
     });
+
+final class $$TodosTableReferences
+    extends BaseReferences<_$AppDatabase, $TodosTable, Todo> {
+  $$TodosTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$SubTasksTable, List<SubTask>> _subTasksRefsTable(
+    _$AppDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.subTasks,
+    aliasName: $_aliasNameGenerator(db.todos.id, db.subTasks.todoId),
+  );
+
+  $$SubTasksTableProcessedTableManager get subTasksRefs {
+    final manager = $$SubTasksTableTableManager(
+      $_db,
+      $_db.subTasks,
+    ).filter((f) => f.todoId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_subTasksRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
+  static MultiTypedResultKey<$FocusSessionsTable, List<FocusSession>>
+  _focusSessionsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.focusSessions,
+    aliasName: $_aliasNameGenerator(db.todos.id, db.focusSessions.todoId),
+  );
+
+  $$FocusSessionsTableProcessedTableManager get focusSessionsRefs {
+    final manager = $$FocusSessionsTableTableManager(
+      $_db,
+      $_db.focusSessions,
+    ).filter((f) => f.todoId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_focusSessionsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
 
 class $$TodosTableFilterComposer extends Composer<_$AppDatabase, $TodosTable> {
   $$TodosTableFilterComposer({
@@ -4099,11 +5069,6 @@ class $$TodosTableFilterComposer extends Composer<_$AppDatabase, $TodosTable> {
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnFilters<String> get subTasks => $composableBuilder(
-    column: $table.subTasks,
-    builder: (column) => ColumnFilters(column),
-  );
-
   ColumnFilters<int> get id => $composableBuilder(
     column: $table.id,
     builder: (column) => ColumnFilters(column),
@@ -4139,6 +5104,21 @@ class $$TodosTableFilterComposer extends Composer<_$AppDatabase, $TodosTable> {
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get tags => $composableBuilder(
+    column: $table.tags,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get remindAt => $composableBuilder(
+    column: $table.remindAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnFilters(column),
@@ -4148,6 +5128,56 @@ class $$TodosTableFilterComposer extends Composer<_$AppDatabase, $TodosTable> {
     column: $table.updatedAt,
     builder: (column) => ColumnFilters(column),
   );
+
+  Expression<bool> subTasksRefs(
+    Expression<bool> Function($$SubTasksTableFilterComposer f) f,
+  ) {
+    final $$SubTasksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.subTasks,
+      getReferencedColumn: (t) => t.todoId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SubTasksTableFilterComposer(
+            $db: $db,
+            $table: $db.subTasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<bool> focusSessionsRefs(
+    Expression<bool> Function($$FocusSessionsTableFilterComposer f) f,
+  ) {
+    final $$FocusSessionsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.focusSessions,
+      getReferencedColumn: (t) => t.todoId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FocusSessionsTableFilterComposer(
+            $db: $db,
+            $table: $db.focusSessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$TodosTableOrderingComposer
@@ -4159,11 +5189,6 @@ class $$TodosTableOrderingComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  ColumnOrderings<String> get subTasks => $composableBuilder(
-    column: $table.subTasks,
-    builder: (column) => ColumnOrderings(column),
-  );
-
   ColumnOrderings<int> get id => $composableBuilder(
     column: $table.id,
     builder: (column) => ColumnOrderings(column),
@@ -4199,6 +5224,21 @@ class $$TodosTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get tags => $composableBuilder(
+    column: $table.tags,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get remindAt => $composableBuilder(
+    column: $table.remindAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -4219,9 +5259,6 @@ class $$TodosTableAnnotationComposer
     super.$addJoinBuilderToRootComposer,
     super.$removeJoinBuilderFromRootComposer,
   });
-  GeneratedColumn<String> get subTasks =>
-      $composableBuilder(column: $table.subTasks, builder: (column) => column);
-
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
@@ -4247,11 +5284,70 @@ class $$TodosTableAnnotationComposer
   GeneratedColumn<String> get category =>
       $composableBuilder(column: $table.category, builder: (column) => column);
 
+  GeneratedColumn<String> get tags =>
+      $composableBuilder(column: $table.tags, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get remindAt =>
+      $composableBuilder(column: $table.remindAt, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  Expression<T> subTasksRefs<T extends Object>(
+    Expression<T> Function($$SubTasksTableAnnotationComposer a) f,
+  ) {
+    final $$SubTasksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.subTasks,
+      getReferencedColumn: (t) => t.todoId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$SubTasksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.subTasks,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
+  Expression<T> focusSessionsRefs<T extends Object>(
+    Expression<T> Function($$FocusSessionsTableAnnotationComposer a) f,
+  ) {
+    final $$FocusSessionsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.focusSessions,
+      getReferencedColumn: (t) => t.todoId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$FocusSessionsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.focusSessions,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$TodosTableTableManager
@@ -4265,9 +5361,9 @@ class $$TodosTableTableManager
           $$TodosTableAnnotationComposer,
           $$TodosTableCreateCompanionBuilder,
           $$TodosTableUpdateCompanionBuilder,
-          (Todo, BaseReferences<_$AppDatabase, $TodosTable, Todo>),
+          (Todo, $$TodosTableReferences),
           Todo,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool subTasksRefs, bool focusSessionsRefs})
         > {
   $$TodosTableTableManager(_$AppDatabase db, $TodosTable table)
     : super(
@@ -4282,7 +5378,6 @@ class $$TodosTableTableManager
               () => $$TodosTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
-                Value<String> subTasks = const Value.absent(),
                 Value<int> id = const Value.absent(),
                 Value<String> title = const Value.absent(),
                 Value<String?> description = const Value.absent(),
@@ -4290,10 +5385,12 @@ class $$TodosTableTableManager
                 Value<bool> isCompleted = const Value.absent(),
                 Value<int> priority = const Value.absent(),
                 Value<String?> category = const Value.absent(),
+                Value<String> tags = const Value.absent(),
+                Value<DateTime?> remindAt = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => TodosCompanion(
-                subTasks: subTasks,
                 id: id,
                 title: title,
                 description: description,
@@ -4301,12 +5398,14 @@ class $$TodosTableTableManager
                 isCompleted: isCompleted,
                 priority: priority,
                 category: category,
+                tags: tags,
+                remindAt: remindAt,
+                sortOrder: sortOrder,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
           createCompanionCallback:
               ({
-                Value<String> subTasks = const Value.absent(),
                 Value<int> id = const Value.absent(),
                 required String title,
                 Value<String?> description = const Value.absent(),
@@ -4314,10 +5413,12 @@ class $$TodosTableTableManager
                 Value<bool> isCompleted = const Value.absent(),
                 Value<int> priority = const Value.absent(),
                 Value<String?> category = const Value.absent(),
+                Value<String> tags = const Value.absent(),
+                Value<DateTime?> remindAt = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
               }) => TodosCompanion.insert(
-                subTasks: subTasks,
                 id: id,
                 title: title,
                 description: description,
@@ -4325,6 +5426,9 @@ class $$TodosTableTableManager
                 isCompleted: isCompleted,
                 priority: priority,
                 category: category,
+                tags: tags,
+                remindAt: remindAt,
+                sortOrder: sortOrder,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -4334,11 +5438,61 @@ class $$TodosTableTableManager
                       .map(
                         (e) => (
                           e.readTable(table),
-                          BaseReferences(db, table, e),
+                          $$TodosTableReferences(db, table, e),
                         ),
                       )
                       .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({
+            subTasksRefs = false,
+            focusSessionsRefs = false,
+          }) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (subTasksRefs) db.subTasks,
+                if (focusSessionsRefs) db.focusSessions,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (subTasksRefs)
+                    await $_getPrefetchedData<Todo, $TodosTable, SubTask>(
+                      currentTable: table,
+                      referencedTable: $$TodosTableReferences
+                          ._subTasksRefsTable(db),
+                      managerFromTypedResult:
+                          (p0) =>
+                              $$TodosTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).subTasksRefs,
+                      referencedItemsForCurrentItem:
+                          (item, referencedItems) =>
+                              referencedItems.where((e) => e.todoId == item.id),
+                      typedResults: items,
+                    ),
+                  if (focusSessionsRefs)
+                    await $_getPrefetchedData<Todo, $TodosTable, FocusSession>(
+                      currentTable: table,
+                      referencedTable: $$TodosTableReferences
+                          ._focusSessionsRefsTable(db),
+                      managerFromTypedResult:
+                          (p0) =>
+                              $$TodosTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).focusSessionsRefs,
+                      referencedItemsForCurrentItem:
+                          (item, referencedItems) =>
+                              referencedItems.where((e) => e.todoId == item.id),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
         ),
       );
 }
@@ -4353,9 +5507,687 @@ typedef $$TodosTableProcessedTableManager =
       $$TodosTableAnnotationComposer,
       $$TodosTableCreateCompanionBuilder,
       $$TodosTableUpdateCompanionBuilder,
-      (Todo, BaseReferences<_$AppDatabase, $TodosTable, Todo>),
+      (Todo, $$TodosTableReferences),
       Todo,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool subTasksRefs, bool focusSessionsRefs})
+    >;
+typedef $$SubTasksTableCreateCompanionBuilder =
+    SubTasksCompanion Function({
+      Value<int> id,
+      required int todoId,
+      required String title,
+      Value<bool> isCompleted,
+      Value<int> sortOrder,
+      required DateTime createdAt,
+    });
+typedef $$SubTasksTableUpdateCompanionBuilder =
+    SubTasksCompanion Function({
+      Value<int> id,
+      Value<int> todoId,
+      Value<String> title,
+      Value<bool> isCompleted,
+      Value<int> sortOrder,
+      Value<DateTime> createdAt,
+    });
+
+final class $$SubTasksTableReferences
+    extends BaseReferences<_$AppDatabase, $SubTasksTable, SubTask> {
+  $$SubTasksTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $TodosTable _todoIdTable(_$AppDatabase db) => db.todos.createAlias(
+    $_aliasNameGenerator(db.subTasks.todoId, db.todos.id),
+  );
+
+  $$TodosTableProcessedTableManager get todoId {
+    final $_column = $_itemColumn<int>('todo_id')!;
+
+    final manager = $$TodosTableTableManager(
+      $_db,
+      $_db.todos,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_todoIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$SubTasksTableFilterComposer
+    extends Composer<_$AppDatabase, $SubTasksTable> {
+  $$SubTasksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isCompleted => $composableBuilder(
+    column: $table.isCompleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$TodosTableFilterComposer get todoId {
+    final $$TodosTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.todoId,
+      referencedTable: $db.todos,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TodosTableFilterComposer(
+            $db: $db,
+            $table: $db.todos,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$SubTasksTableOrderingComposer
+    extends Composer<_$AppDatabase, $SubTasksTable> {
+  $$SubTasksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isCompleted => $composableBuilder(
+    column: $table.isCompleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$TodosTableOrderingComposer get todoId {
+    final $$TodosTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.todoId,
+      referencedTable: $db.todos,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TodosTableOrderingComposer(
+            $db: $db,
+            $table: $db.todos,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$SubTasksTableAnnotationComposer
+    extends Composer<_$AppDatabase, $SubTasksTable> {
+  $$SubTasksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<bool> get isCompleted => $composableBuilder(
+    column: $table.isCompleted,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  $$TodosTableAnnotationComposer get todoId {
+    final $$TodosTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.todoId,
+      referencedTable: $db.todos,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TodosTableAnnotationComposer(
+            $db: $db,
+            $table: $db.todos,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$SubTasksTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $SubTasksTable,
+          SubTask,
+          $$SubTasksTableFilterComposer,
+          $$SubTasksTableOrderingComposer,
+          $$SubTasksTableAnnotationComposer,
+          $$SubTasksTableCreateCompanionBuilder,
+          $$SubTasksTableUpdateCompanionBuilder,
+          (SubTask, $$SubTasksTableReferences),
+          SubTask,
+          PrefetchHooks Function({bool todoId})
+        > {
+  $$SubTasksTableTableManager(_$AppDatabase db, $SubTasksTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer:
+              () => $$SubTasksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer:
+              () => $$SubTasksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer:
+              () => $$SubTasksTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int> todoId = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<bool> isCompleted = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+              }) => SubTasksCompanion(
+                id: id,
+                todoId: todoId,
+                title: title,
+                isCompleted: isCompleted,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required int todoId,
+                required String title,
+                Value<bool> isCompleted = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+                required DateTime createdAt,
+              }) => SubTasksCompanion.insert(
+                id: id,
+                todoId: todoId,
+                title: title,
+                isCompleted: isCompleted,
+                sortOrder: sortOrder,
+                createdAt: createdAt,
+              ),
+          withReferenceMapper:
+              (p0) =>
+                  p0
+                      .map(
+                        (e) => (
+                          e.readTable(table),
+                          $$SubTasksTableReferences(db, table, e),
+                        ),
+                      )
+                      .toList(),
+          prefetchHooksCallback: ({todoId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                T extends TableManagerState<
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic
+                >
+              >(state) {
+                if (todoId) {
+                  state =
+                      state.withJoin(
+                            currentTable: table,
+                            currentColumn: table.todoId,
+                            referencedTable: $$SubTasksTableReferences
+                                ._todoIdTable(db),
+                            referencedColumn:
+                                $$SubTasksTableReferences._todoIdTable(db).id,
+                          )
+                          as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$SubTasksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $SubTasksTable,
+      SubTask,
+      $$SubTasksTableFilterComposer,
+      $$SubTasksTableOrderingComposer,
+      $$SubTasksTableAnnotationComposer,
+      $$SubTasksTableCreateCompanionBuilder,
+      $$SubTasksTableUpdateCompanionBuilder,
+      (SubTask, $$SubTasksTableReferences),
+      SubTask,
+      PrefetchHooks Function({bool todoId})
+    >;
+typedef $$FocusSessionsTableCreateCompanionBuilder =
+    FocusSessionsCompanion Function({
+      Value<int> id,
+      Value<int?> todoId,
+      Value<String> sessionType,
+      required int durationSeconds,
+      required DateTime startTime,
+      required DateTime endTime,
+    });
+typedef $$FocusSessionsTableUpdateCompanionBuilder =
+    FocusSessionsCompanion Function({
+      Value<int> id,
+      Value<int?> todoId,
+      Value<String> sessionType,
+      Value<int> durationSeconds,
+      Value<DateTime> startTime,
+      Value<DateTime> endTime,
+    });
+
+final class $$FocusSessionsTableReferences
+    extends BaseReferences<_$AppDatabase, $FocusSessionsTable, FocusSession> {
+  $$FocusSessionsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $TodosTable _todoIdTable(_$AppDatabase db) => db.todos.createAlias(
+    $_aliasNameGenerator(db.focusSessions.todoId, db.todos.id),
+  );
+
+  $$TodosTableProcessedTableManager? get todoId {
+    final $_column = $_itemColumn<int>('todo_id');
+    if ($_column == null) return null;
+    final manager = $$TodosTableTableManager(
+      $_db,
+      $_db.todos,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_todoIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$FocusSessionsTableFilterComposer
+    extends Composer<_$AppDatabase, $FocusSessionsTable> {
+  $$FocusSessionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sessionType => $composableBuilder(
+    column: $table.sessionType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get startTime => $composableBuilder(
+    column: $table.startTime,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get endTime => $composableBuilder(
+    column: $table.endTime,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$TodosTableFilterComposer get todoId {
+    final $$TodosTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.todoId,
+      referencedTable: $db.todos,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TodosTableFilterComposer(
+            $db: $db,
+            $table: $db.todos,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FocusSessionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $FocusSessionsTable> {
+  $$FocusSessionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sessionType => $composableBuilder(
+    column: $table.sessionType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get startTime => $composableBuilder(
+    column: $table.startTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get endTime => $composableBuilder(
+    column: $table.endTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$TodosTableOrderingComposer get todoId {
+    final $$TodosTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.todoId,
+      referencedTable: $db.todos,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TodosTableOrderingComposer(
+            $db: $db,
+            $table: $db.todos,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FocusSessionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $FocusSessionsTable> {
+  $$FocusSessionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get sessionType => $composableBuilder(
+    column: $table.sessionType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get startTime =>
+      $composableBuilder(column: $table.startTime, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get endTime =>
+      $composableBuilder(column: $table.endTime, builder: (column) => column);
+
+  $$TodosTableAnnotationComposer get todoId {
+    final $$TodosTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.todoId,
+      referencedTable: $db.todos,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TodosTableAnnotationComposer(
+            $db: $db,
+            $table: $db.todos,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$FocusSessionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $FocusSessionsTable,
+          FocusSession,
+          $$FocusSessionsTableFilterComposer,
+          $$FocusSessionsTableOrderingComposer,
+          $$FocusSessionsTableAnnotationComposer,
+          $$FocusSessionsTableCreateCompanionBuilder,
+          $$FocusSessionsTableUpdateCompanionBuilder,
+          (FocusSession, $$FocusSessionsTableReferences),
+          FocusSession,
+          PrefetchHooks Function({bool todoId})
+        > {
+  $$FocusSessionsTableTableManager(_$AppDatabase db, $FocusSessionsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer:
+              () => $$FocusSessionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer:
+              () =>
+                  $$FocusSessionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer:
+              () => $$FocusSessionsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int?> todoId = const Value.absent(),
+                Value<String> sessionType = const Value.absent(),
+                Value<int> durationSeconds = const Value.absent(),
+                Value<DateTime> startTime = const Value.absent(),
+                Value<DateTime> endTime = const Value.absent(),
+              }) => FocusSessionsCompanion(
+                id: id,
+                todoId: todoId,
+                sessionType: sessionType,
+                durationSeconds: durationSeconds,
+                startTime: startTime,
+                endTime: endTime,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<int?> todoId = const Value.absent(),
+                Value<String> sessionType = const Value.absent(),
+                required int durationSeconds,
+                required DateTime startTime,
+                required DateTime endTime,
+              }) => FocusSessionsCompanion.insert(
+                id: id,
+                todoId: todoId,
+                sessionType: sessionType,
+                durationSeconds: durationSeconds,
+                startTime: startTime,
+                endTime: endTime,
+              ),
+          withReferenceMapper:
+              (p0) =>
+                  p0
+                      .map(
+                        (e) => (
+                          e.readTable(table),
+                          $$FocusSessionsTableReferences(db, table, e),
+                        ),
+                      )
+                      .toList(),
+          prefetchHooksCallback: ({todoId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins: <
+                T extends TableManagerState<
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic,
+                  dynamic
+                >
+              >(state) {
+                if (todoId) {
+                  state =
+                      state.withJoin(
+                            currentTable: table,
+                            currentColumn: table.todoId,
+                            referencedTable: $$FocusSessionsTableReferences
+                                ._todoIdTable(db),
+                            referencedColumn:
+                                $$FocusSessionsTableReferences
+                                    ._todoIdTable(db)
+                                    .id,
+                          )
+                          as T;
+                }
+
+                return state;
+              },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$FocusSessionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $FocusSessionsTable,
+      FocusSession,
+      $$FocusSessionsTableFilterComposer,
+      $$FocusSessionsTableOrderingComposer,
+      $$FocusSessionsTableAnnotationComposer,
+      $$FocusSessionsTableCreateCompanionBuilder,
+      $$FocusSessionsTableUpdateCompanionBuilder,
+      (FocusSession, $$FocusSessionsTableReferences),
+      FocusSession,
+      PrefetchHooks Function({bool todoId})
     >;
 typedef $$NotesTableCreateCompanionBuilder =
     NotesCompanion Function({
@@ -6720,6 +8552,10 @@ class $AppDatabaseManager {
   $AppDatabaseManager(this._db);
   $$TodosTableTableManager get todos =>
       $$TodosTableTableManager(_db, _db.todos);
+  $$SubTasksTableTableManager get subTasks =>
+      $$SubTasksTableTableManager(_db, _db.subTasks);
+  $$FocusSessionsTableTableManager get focusSessions =>
+      $$FocusSessionsTableTableManager(_db, _db.focusSessions);
   $$NotesTableTableManager get notes =>
       $$NotesTableTableManager(_db, _db.notes);
   $$RoutinesTableTableManager get routines =>
