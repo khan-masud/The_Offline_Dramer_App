@@ -1,6 +1,7 @@
 ﻿import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 
@@ -37,30 +38,23 @@ class WeatherInfo {
 }
 
 String _getConditionText(int code) {
-  if (code == 0) return 'Clear Sky';
-  if (code == 1) return 'Mainly Clear';
-  if (code == 2) return 'Partly Cloudy';
-  if (code == 3) return 'Overcast';
-  if (code == 45 || code == 48) return 'Foggy';
-  if (code >= 51 && code <= 55) return 'Drizzle';
-  if (code >= 61 && code <= 65) return 'Rainy';
-  if (code == 71 || code == 73 || code == 75) return 'Snowy';
-  if (code >= 80 && code <= 82) return 'Rain Showers';
-  if (code >= 95 && code <= 99) return 'Thunderstorm';
-  return 'Unknown';
+  // WeatherAPI conditions (https://www.weatherapi.com/docs/weather_conditions.json)
+  return 'Unknown'; // Fallback if somehow not provided natively by API.
 }
 
 String _getIcon(int code) {
-  if (code == 0) return '☀️';
-  if (code == 1 || code == 2) return '⛅';
-  if (code == 3) return '☁️';
-  if (code == 45 || code == 48) return '🌫️';
-  if (code >= 51 && code <= 55) return '🌧️';
-  if (code >= 61 && code <= 65) return '🌧️';
-  if (code >= 71 && code <= 75) return '❄️';
-  if (code >= 80 && code <= 82) return '🌧️';
-  if (code >= 95 && code <= 99) return '⛈️';
-  return '🌡️';
+  // WeatherAPI standardized codes
+  if (code == 1000) return '☀️'; // Sunny/Clear
+  if (code == 1003) return '⛅'; // Partly cloudy
+  if (code == 1006) return '☁️'; // Cloudy
+  if (code == 1009) return '☁️'; // Overcast
+  if (code == 1030) return '🌫️'; // Mist
+  if (code == 1063 || code == 1180 || code == 1183) return '🌦️'; // Patchy rain
+  if (code >= 1186 && code <= 1201) return '🌧️'; // Rain
+  if (code >= 1087 && code <= 1282) return '⛈️'; // Thunder/heavy
+  if (code >= 1066 && code <= 1114) return '❄️'; // Snow
+  
+  return '🌡️'; 
 }
 
 final weatherProvider = FutureProvider<WeatherInfo?>((ref) async {
@@ -129,41 +123,42 @@ final weatherProvider = FutureProvider<WeatherInfo?>((ref) async {
       locationStr = 'Lat: ${lat.toStringAsFixed(2)}, Lon: ${lon.toStringAsFixed(2)}';
     }
 
+    final apiKey = dotenv.env['WEATHER_API_KEY'] ?? '';
     final weatherUrl =
-        'https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&forecast_days=2&timezone=auto';
+        'https://api.weatherapi.com/v1/forecast.json?key=$apiKey&q=$lat,$lon&days=2&aqi=no&alerts=no';
     final weatherRes = await http.get(Uri.parse(weatherUrl));
 
     if (weatherRes.statusCode != 200) return null;
     final weatherData = jsonDecode(weatherRes.body);
 
     final currentObj = weatherData['current'];
-    final currentTemp = (currentObj['temperature_2m'] as num).toDouble();      
-    final currentCode = (currentObj['weather_code'] as num).toInt();
+    final currentTemp = (currentObj['temp_c'] as num).toDouble();
+    final currentCode = (currentObj['condition']['code'] as num).toInt();
+    final conditionText = currentObj['condition']['text'] as String;
 
-    final dailyObj = weatherData['daily'];
-    final maxTemp = (dailyObj['temperature_2m_max'][0] as num).toDouble();     
-    final minTemp = (dailyObj['temperature_2m_min'][0] as num).toDouble();     
-
-    final times = List<String>.from(weatherData['hourly']['time']);
-    final temps = List<double>.from(
-      weatherData['hourly']['temperature_2m'].map((e) => (e as num).toDouble())
-    );
-    final codes = List<int>.from(
-      weatherData['hourly']['weather_code'].map((e) => (e as num).toInt()),    
-    );
+    final todayForecast = weatherData['forecast']['forecastday'][0]['day'];
+    final maxTemp = (todayForecast['maxtemp_c'] as num).toDouble();
+    final minTemp = (todayForecast['mintemp_c'] as num).toDouble();
 
     List<HourlyWeather> hourlyForecast = [];
     final now = DateTime.now();
 
-    for (int i = 0; i < times.length; i++) {
-      final time = DateTime.parse(times[i]);
+    // WeatherAPI returns hourly data inside forecastday array.
+    // We combine today and tomorrow's hours to get a smooth 24h timeline.
+    final allHours = [
+      ...weatherData['forecast']['forecastday'][0]['hour'],
+      ...weatherData['forecast']['forecastday'][1]['hour']
+    ];
+
+    for (var hourObj in allHours) {
+      final time = DateTime.parse(hourObj['time']);
       if (time.isAfter(now.subtract(const Duration(hours: 1))) &&
           time.isBefore(now.add(const Duration(hours: 24)))) {
         hourlyForecast.add(
           HourlyWeather(
             time: time,
-            temperature: temps[i],
-            weatherCode: codes[i],
+            temperature: (hourObj['temp_c'] as num).toDouble(),
+            weatherCode: (hourObj['condition']['code'] as num).toInt(),
           ),
         );
       }
@@ -172,7 +167,7 @@ final weatherProvider = FutureProvider<WeatherInfo?>((ref) async {
     return WeatherInfo(
       locationName: locationStr,
       currentTemp: currentTemp,
-      currentCondition: _getConditionText(currentCode),
+      currentCondition: conditionText, // Using text provided by WeatherAPI directly (e.g. "Sunny", "Light rain")
       maxTemp: maxTemp,
       minTemp: minTemp,
       hourly: hourlyForecast,

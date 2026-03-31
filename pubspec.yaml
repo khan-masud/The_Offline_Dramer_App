@@ -1,7 +1,7 @@
 name: tod
 description: "The Offline Dreamer - Your Personal Life Manager"
 publish_to: 'none'
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: ^3.7.0
@@ -34,6 +34,7 @@ dependencies:
   fl_chart: ^1.2.0
   geolocator: ^14.0.2
   geocoding: ^4.0.0
+  flutter_dotenv: ^6.0.0
 
 dev_dependencies:
   flutter_test:
@@ -45,6 +46,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - .env
 
 flutter_launcher_icons:
   android: true
