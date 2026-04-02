@@ -18,9 +18,12 @@ class LinksScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final linksAsync = ref.watch(filteredLinksProvider);
-    final categoriesAsync = ref.watch(linkCategoriesProvider);
-    final activeCategory = ref.watch(linkCategoryFilterProvider);
+    final foldersAsync = ref.watch(linkFoldersProvider);
+    final activeFolder = ref.watch(linkFolderFilterProvider);
+    final searchQuery = ref.watch(linkSearchProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -30,33 +33,38 @@ class LinksScreen extends ConsumerWidget {
             icon: const Icon(Icons.search_rounded),
             onPressed: () => _showSearch(context, ref),
           ),
+          IconButton(
+            icon: const Icon(Icons.create_new_folder_outlined),
+            onPressed: () => _showAddFolderSheet(context, ref),
+          ),
         ],
       ),
       body: Column(
         children: [
-          // Category chips
+          // Folder chips
           SizedBox(
-            height: 44,
-            child: categoriesAsync.when(
-              data: (categories) {
-                if (categories.isEmpty) return const SizedBox.shrink();
+            height: 48,
+            child: foldersAsync.when(
+              data: (folders) {
+                if (folders.isEmpty) return const SizedBox.shrink();
                 return ListView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   physics: const BouncingScrollPhysics(),
                   children: [
-                    _CategoryChip(
+                    _FolderChip(
                       label: 'All',
-                      isActive: activeCategory == null,
-                      onTap: () => ref.read(linkCategoryFilterProvider.notifier).state = null,
+                      emoji: '📚',
+                      isActive: activeFolder == null,
+                      onTap: () => ref.read(linkFolderFilterProvider.notifier).state = null,
                     ),
-                    ...categories.map((c) => Padding(
+                    ...folders.map((f) => Padding(
                       padding: const EdgeInsets.only(left: 8),
-                      child: _CategoryChip(
-                        label: c,
-                        emoji: linkCategoryIcons[c],
-                        isActive: activeCategory == c,
-                        onTap: () => ref.read(linkCategoryFilterProvider.notifier).state = c,
+                      child: _FolderChip(
+                        label: f.name,
+                        emoji: f.emoji,
+                        isActive: activeFolder?.id == f.id,
+                        onTap: () => ref.read(linkFolderFilterProvider.notifier).state = f,
                       ),
                     )),
                   ],
@@ -66,53 +74,101 @@ class LinksScreen extends ConsumerWidget {
               error: (_, __) => const SizedBox.shrink(),
             ),
           ),
-          const SizedBox(height: 8),
-          // Links list
+          
+          if (searchQuery.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  Text('Showing results for "$searchQuery"', style: AppTypography.labelMedium),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () => ref.read(linkSearchProvider.notifier).state = '',
+                    child: const Text('Clear'),
+                  ),
+                ],
+              ),
+            ),
+
+          // Custom Folder Management info
+          if (activeFolder != null && searchQuery.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Text('${activeFolder.emoji} ${activeFolder.name}', style: AppTypography.headingSmall),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Copy all links',
+                    icon: Icon(Icons.copy_all_outlined, size: 20, color: theme.colorScheme.onSurfaceVariant),
+                    onPressed: () {
+                      final linksAsyncVal = ref.read(filteredLinksProvider);
+                      linksAsyncVal.whenData((links) {
+                        if (links.isEmpty) return;
+                        final sb = StringBuffer();
+                        for (int i = 0; i < links.length; i++) {
+                          sb.writeln('${i + 1}. ${links[i].url}');
+                        }
+                        Clipboard.setData(ClipboardData(text: sb.toString()));
+                        ScaffoldMessenger.of(context).clearSnackBars();
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${links.length} links copied to clipboard')));
+                      });
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.edit_outlined, size: 20, color: theme.colorScheme.onSurfaceVariant),
+                    onPressed: () => _showEditFolderSheet(context, ref, activeFolder),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 20, color: AppColors.error),
+                    onPressed: () => _showDeleteFolderDialog(context, ref, activeFolder),
+                  )
+                ],
+              ),
+            ),
+
+          // Links List
           Expanded(
             child: linksAsync.when(
               data: (allLinks) {
                 final hidden = ref.watch(hiddenItemsProvider);
                 final links = allLinks.where((l) => !hidden.contains('link_${l.id}')).toList();
+
                 if (links.isEmpty) return _emptyState(context);
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+
+                return ListView.separated(
+                  padding: const EdgeInsets.all(16),
                   physics: const BouncingScrollPhysics(),
                   itemCount: links.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
                   itemBuilder: (context, i) {
-                    return _LinkTile(
-                      link: links[i],
-                      onOpen: () => _openLink(context, links[i].url),
-                      onCopy: () => _copyLink(context, links[i].url),
-                      onEdit: () => _showAddEditSheet(context, ref, link: links[i]),
+                    final link = links[i];
+                    return _LinkCard(
+                      link: link,
+                      onTap: () => _openLink(link.url),
+                      onEdit: () => _showAddLinkSheet(context, ref, link: link),
+                      onToggleFavorite: () => ref.read(databaseProvider).toggleLinkFavorite(link.id, !link.isFavorite),
                       onDelete: () {
-                        final itemKey = 'link_${links[i].id}';
-                        ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                        // Optimistic delete with undo
+                        final itemKey = 'link_${link.id}';
+                        ref.read(hiddenItemsProvider.notifier).update((s) => {...s, itemKey});
                         ScaffoldMessenger.of(context).clearSnackBars();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: const Text('Link deleted'),
-                            duration: const Duration(seconds: 4),
                             action: SnackBarAction(
                               label: 'UNDO',
-                              onPressed: () {
-                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                              },
+                              onPressed: () => ref.read(hiddenItemsProvider.notifier).update((s) => {...s}..remove(itemKey)),
                             ),
                           ),
                         ).closed.then((reason) {
-                          if (reason != SnackBarClosedReason.action) {
-                            if (ref.read(hiddenItemsProvider).contains(itemKey)) {
-                              ref.read(databaseProvider).deleteLink(links[i].id);
-                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                            }
+                          if (reason != SnackBarClosedReason.action && ref.read(hiddenItemsProvider).contains(itemKey)) {
+                            ref.read(databaseProvider).deleteLink(link.id);
+                            ref.read(hiddenItemsProvider.notifier).update((s) => {...s}..remove(itemKey));
                           }
                         });
                       },
-                      onToggleFavorite: () {
-                        HapticFeedback.lightImpact();
-                        ref.read(databaseProvider).toggleLinkFavorite(links[i].id, !links[i].isFavorite);
-                      },
-                    ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
+                    ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms).slideY(begin: 0.1, end: 0, delay: (50 * i).ms);
                   },
                 );
               },
@@ -124,54 +180,10 @@ class LinksScreen extends ConsumerWidget {
       ),
       floatingActionButton: FloatingActionButton(
         heroTag: 'links_fab',
-        onPressed: () => _showAddEditSheet(context, ref),
+        onPressed: () => _showAddLinkSheet(context, ref),
         backgroundColor: AppColors.primary,
         child: const Icon(Icons.add_rounded, color: Colors.white),
       ),
-    );
-  }
-
-  Widget _emptyState(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: AppColors.info.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: const Icon(Icons.link_rounded, size: 48, color: AppColors.info),
-          ),
-          const SizedBox(height: 20),
-          Text('No links saved', style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurface)),
-          const SizedBox(height: 8),
-          Text('Tap + to save your first link', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _openLink(BuildContext context, String url) async {
-    var uri = Uri.tryParse(url);
-    if (uri == null) return;
-    if (!uri.hasScheme) {
-      uri = Uri.parse('https://$url');
-    }
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not open link: $e'), backgroundColor: AppColors.error),
-        );
-      }
-    }
-  }
-
-  void _copyLink(BuildContext context, String url) {
-    Clipboard.setData(ClipboardData(text: url));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Link copied to clipboard ✓'), duration: Duration(seconds: 2)),
     );
   }
 
@@ -179,11 +191,11 @@ class LinksScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (ctx) {
-        final controller = TextEditingController(text: ref.read(linkSearchProvider));
+        final ctrl = TextEditingController(text: ref.read(linkSearchProvider));
         return AlertDialog(
           title: const Text('Search Links'),
           content: TextField(
-            controller: controller,
+            controller: ctrl,
             autofocus: true,
             decoration: const InputDecoration(hintText: 'Search...', prefixIcon: Icon(Icons.search_rounded)),
             onChanged: (v) => ref.read(linkSearchProvider.notifier).state = v,
@@ -203,29 +215,202 @@ class LinksScreen extends ConsumerWidget {
     );
   }
 
-  void _showAddEditSheet(BuildContext context, WidgetRef ref, {Link? link}) {
+  Future<void> _openLink(String urlString) async {
+    final url = Uri.tryParse(urlString);
+    if (url != null && await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Widget _emptyState(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(color: AppColors.purple.withValues(alpha: 0.1), shape: BoxShape.circle),
+            child: const Icon(Icons.link_rounded, size: 48, color: AppColors.purple),
+          ),
+          const SizedBox(height: 16),
+          Text('No links found', style: AppTypography.headingMedium),
+        ],
+      ),
+    );
+  }
+
+  void _showAddFolderSheet(BuildContext context, WidgetRef ref) {
+    _showFolderSheet(context, ref, null);
+  }
+
+  void _showEditFolderSheet(BuildContext context, WidgetRef ref, LinkFolder folder) {
+    _showFolderSheet(context, ref, folder);
+  }
+
+  void _showFolderSheet(BuildContext context, WidgetRef ref, LinkFolder? folder) {
+    final nameCtrl = TextEditingController(text: folder?.name ?? '');
+    final emojiCtrl = TextEditingController(text: folder?.emoji ?? '📁');
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AddEditLinkSheet(link: link),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
+        
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimensions.radiusXl)),
+          ),
+          padding: EdgeInsets.fromLTRB(24, 24, 24, bottomInset + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(folder == null ? 'Create Folder' : 'Edit Folder', style: AppTypography.headingMedium),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  SizedBox(
+                    width: 70,
+                    child: TextField(
+                      controller: emojiCtrl,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 24),
+                      decoration: const InputDecoration(labelText: 'Emoji'),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(labelText: 'Folder Name'),
+                      autofocus: folder == null,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () async {
+                    if (nameCtrl.text.trim().isEmpty) return;
+                    final db = ref.read(databaseProvider);
+                    if (folder == null) {
+                      await db.addLinkFolder(LinkFoldersCompanion(
+                        name: Value(nameCtrl.text.trim()),
+                        emoji: Value(emojiCtrl.text.trim().isEmpty ? '📁' : emojiCtrl.text.trim()),
+                        createdAt: Value(DateTime.now()),
+                      ));
+                    } else {
+                      await db.updateLinkFolder(LinkFoldersCompanion(
+                        id: Value(folder.id),
+                        name: Value(nameCtrl.text.trim()),
+                        emoji: Value(emojiCtrl.text.trim().isEmpty ? '📁' : emojiCtrl.text.trim()),
+                      ));
+                      if (ref.read(linkFolderFilterProvider)?.id == folder.id) {
+                        ref.read(linkFolderFilterProvider.notifier).state = null;
+                      }
+                    }
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  child: const Text('Save Folder'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDeleteFolderDialog(BuildContext context, WidgetRef ref, LinkFolder folder) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Folder?'),
+        content: Text('Are you sure you want to delete "${folder.name}"? This will also delete ALL links inside this folder.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              ref.read(linkFolderFilterProvider.notifier).state = null;
+              ref.read(databaseProvider).deleteLinkFolder(folder.id);
+              Navigator.pop(ctx);
+            },
+            child: const Text('Delete All', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddLinkSheet(BuildContext context, WidgetRef ref, {Link? link}) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _AddLinkSheet(link: link),
     );
   }
 }
 
-// ==================== LINK TILE ====================
-class _LinkTile extends StatelessWidget {
+class _FolderChip extends StatelessWidget {
+  final String label;
+  final String emoji;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _FolderChip({
+    required this.label,
+    required this.emoji,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = isActive ? AppColors.primary : theme.colorScheme.surface;
+    final textColor = isActive ? Colors.white : theme.colorScheme.onSurface;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+          border: Border.all(
+            color: isActive ? color : theme.colorScheme.outline.withValues(alpha: 0.3),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 14)),
+            const SizedBox(width: 8),
+            Text(label, style: AppTypography.labelMedium.copyWith(color: textColor)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LinkCard extends StatelessWidget {
   final Link link;
-  final VoidCallback onOpen;
-  final VoidCallback onCopy;
+  final VoidCallback onTap;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onToggleFavorite;
 
-  const _LinkTile({
+  const _LinkCard({
     required this.link,
-    required this.onOpen,
-    required this.onCopy,
+    required this.onTap,
     required this.onEdit,
     required this.onDelete,
     required this.onToggleFavorite,
@@ -234,307 +419,302 @@ class _LinkTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final emoji = linkCategoryIcons[link.category ?? ''] ?? '🔗';
-    final domain = _extractDomain(link.url);
-
-    return Dismissible(
-      key: ValueKey(link.id),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        margin: const EdgeInsets.only(bottom: 10),
-        decoration: BoxDecoration(
-          color: AppColors.error,
-          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
-        ),
-        child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
-      ),
-      onDismissed: (_) => onDelete(),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: AppCard(
-          onTap: onOpen,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: AppColors.info.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                ),
-                child: Center(child: Text(emoji, style: const TextStyle(fontSize: 20))),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      link.title,
-                      style: AppTypography.bodyLarge.copyWith(color: theme.colorScheme.onSurface),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+    final uri = Uri.tryParse(link.url);
+    final domain = uri?.host ?? '';
+    
+    return AppCard(
+      onTap: onTap,
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Favicon placeholder
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.purple.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                  ),
+                  child: Center(
+                    child: Text(
+                      domain.isNotEmpty ? domain[0].toUpperCase() : '🔗',
+                      style: AppTypography.headingMedium.copyWith(color: AppColors.purple),
                     ),
-                    Text(
-                      domain,
-                      style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              GestureDetector(
-                onTap: onToggleFavorite,
-                child: Icon(
-                  link.isFavorite ? Icons.star_rounded : Icons.star_outline_rounded,
-                  color: link.isFavorite ? AppColors.warning : theme.colorScheme.onSurfaceVariant,
-                  size: 22,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(link.title, style: AppTypography.labelLarge, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.link_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              domain.isNotEmpty ? domain : link.url,
+                              style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (link.category != null) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            link.category!,
+                            style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert_rounded, size: 20, color: theme.colorScheme.onSurfaceVariant),
-                onSelected: (v) {
-                  switch (v) {
-                    case 'copy': onCopy();
-                    case 'edit': onEdit();
-                    case 'delete': onDelete();
-                  }
-                },
-                itemBuilder: (ctx) => [
-                  const PopupMenuItem(value: 'copy', child: ListTile(leading: Icon(Icons.copy_rounded), title: Text('Copy URL'), dense: true)),
-                  const PopupMenuItem(value: 'edit', child: ListTile(leading: Icon(Icons.edit_outlined), title: Text('Edit'), dense: true)),
-                  const PopupMenuItem(value: 'delete', child: ListTile(leading: Icon(Icons.delete_outline, color: AppColors.error), title: Text('Delete', style: TextStyle(color: AppColors.error)), dense: true)),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+          if (link.note != null && link.note!.isNotEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                border: Border(top: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.5))),
+              ),
+              child: Text(
+                link.note!,
+                style: AppTypography.bodySmall,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          // Actions
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          elevation: 0,
+                          backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                          foregroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: onTap,
+                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                        label: const Text('Open'),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Copy Link',
+                        icon: Icon(Icons.copy_rounded, size: 20, color: theme.colorScheme.onSurfaceVariant),
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: link.url));
+                          ScaffoldMessenger.of(context).clearSnackBars();
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link copied to clipboard')));
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(link.isFavorite ? Icons.star_rounded : Icons.star_border_rounded, 
+                      color: link.isFavorite ? AppColors.warning : theme.colorScheme.onSurfaceVariant),
+                  onPressed: onToggleFavorite,
+                ),
+                IconButton(
+                  icon: Icon(Icons.edit_outlined, color: theme.colorScheme.onSurfaceVariant),
+                  onPressed: onEdit,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+                  onPressed: onDelete,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
-
-  String _extractDomain(String url) {
-    try {
-      var uri = Uri.tryParse(url);
-      if (uri != null && uri.host.isNotEmpty) return uri.host;
-      uri = Uri.tryParse('https://$url');
-      if (uri != null && uri.host.isNotEmpty) return uri.host;
-    } catch (_) {}
-    return url.length > 40 ? '${url.substring(0, 40)}...' : url;
-  }
 }
 
-// ==================== ADD/EDIT SHEET ====================
-class _AddEditLinkSheet extends ConsumerStatefulWidget {
+class _AddLinkSheet extends ConsumerStatefulWidget {
   final Link? link;
-  const _AddEditLinkSheet({this.link});
+  const _AddLinkSheet({this.link});
 
   @override
-  ConsumerState<_AddEditLinkSheet> createState() => _AddEditLinkSheetState();
+  ConsumerState<_AddLinkSheet> createState() => _AddLinkSheetState();
 }
 
-class _AddEditLinkSheetState extends ConsumerState<_AddEditLinkSheet> {
-  late TextEditingController _urlCtrl;
+class _AddLinkSheetState extends ConsumerState<_AddLinkSheet> {
   late TextEditingController _titleCtrl;
+  late TextEditingController _urlCtrl;
   late TextEditingController _noteCtrl;
-  String? _category;
-
-  bool get isEditing => widget.link != null;
+  String? _selectedFolder;
 
   @override
   void initState() {
     super.initState();
-    _urlCtrl = TextEditingController(text: widget.link?.url ?? '');
     _titleCtrl = TextEditingController(text: widget.link?.title ?? '');
+    _urlCtrl = TextEditingController(text: widget.link?.url ?? '');
     _noteCtrl = TextEditingController(text: widget.link?.note ?? '');
-    _category = widget.link?.category ?? defaultLinkCategories.first;
+    _selectedFolder = widget.link?.category;
+    
+    _checkClipboardForUrl();
+  }
+
+  Future<void> _checkClipboardForUrl() async {
+    if (widget.link != null) return; // Don't overwrite if editing
+    
+    final data = await Clipboard.getData('text/plain');
+    final text = data?.text;
+    if (text != null && (text.startsWith('http://') || text.startsWith('https://'))) {
+      if (_urlCtrl.text.isEmpty) {
+        setState(() {
+          _urlCtrl.text = text;
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
-    _urlCtrl.dispose();
     _titleCtrl.dispose();
+    _urlCtrl.dispose();
     _noteCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (_urlCtrl.text.trim().isEmpty) return;
-    if (_titleCtrl.text.trim().isEmpty) {
-      // Auto-generate title from URL
-      _titleCtrl.text = _extractTitle(_urlCtrl.text.trim());
+  void _save() async {
+    final title = _titleCtrl.text.trim();
+    final url = _urlCtrl.text.trim();
+    final note = _noteCtrl.text.trim();
+
+    if (title.isEmpty || url.isEmpty || _selectedFolder == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Title, URL, and Folder are required')));
+      return;
     }
 
     final db = ref.read(databaseProvider);
-
-    if (isEditing) {
+    if (widget.link != null) {
       await db.updateLink(LinksCompanion(
         id: Value(widget.link!.id),
-        url: Value(_urlCtrl.text.trim()),
-        title: Value(_titleCtrl.text.trim()),
-        category: Value(_category),
-        note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
+        title: Value(title),
+        url: Value(url),
+        category: Value(_selectedFolder),
+        note: Value(note.isEmpty ? null : note),
       ));
     } else {
       await db.addLink(LinksCompanion(
-        url: Value(_urlCtrl.text.trim()),
-        title: Value(_titleCtrl.text.trim()),
-        category: Value(_category),
-        note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
+        title: Value(title),
+        url: Value(url),
+        category: Value(_selectedFolder),
+        note: Value(note.isEmpty ? null : note),
         createdAt: Value(DateTime.now()),
       ));
     }
-
+    
     if (mounted) Navigator.pop(context);
-  }
-
-  String _extractTitle(String url) {
-    try {
-      var uri = Uri.tryParse(url);
-      if (uri == null || uri.host.isEmpty) {
-        uri = Uri.tryParse('https://$url');
-      }
-      if (uri != null && uri.host.isNotEmpty) {
-        return uri.host.replaceFirst('www.', '');
-      }
-    } catch (_) {}
-    return url;
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final foldersAsync = ref.watch(linkFoldersProvider);
 
     return Container(
-      padding: EdgeInsets.only(bottom: bottomInset),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        color: theme.scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppDimensions.radiusXl)),
       ),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: theme.colorScheme.outline, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 20),
-            Text(isEditing ? 'Edit Link' : 'Save Link', style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface)),
-            const SizedBox(height: 16),
-            // URL
-            TextField(
-              controller: _urlCtrl,
-              autofocus: !isEditing,
-              keyboardType: TextInputType.url,
-              decoration: const InputDecoration(hintText: 'https://...', prefixIcon: Icon(Icons.link_rounded)),
-              style: AppTypography.bodyLarge.copyWith(color: theme.colorScheme.onSurface),
+      padding: EdgeInsets.fromLTRB(24, 24, 24, bottomInset + 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(widget.link != null ? 'Edit Link' : 'Save Link', style: AppTypography.headingMedium),
+          const SizedBox(height: 24),
+          
+          // Folder Selection
+          Text('Folder*', style: AppTypography.labelMedium),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              border: Border.all(color: theme.colorScheme.outline),
+              borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
             ),
-            const SizedBox(height: 12),
-            // Title
-            TextField(
-              controller: _titleCtrl,
-              decoration: const InputDecoration(hintText: 'Title (auto-generated if empty)'),
-              style: AppTypography.bodyLarge.copyWith(color: theme.colorScheme.onSurface),
-            ),
-            const SizedBox(height: 16),
-            // Category
-            Text('Category', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: defaultLinkCategories.map((cat) {
-                final isActive = _category == cat;
-                final emoji = linkCategoryIcons[cat] ?? '🔗';
-                return GestureDetector(
-                  onTap: () => setState(() => _category = cat),
-                  child: AnimatedContainer(
-                    duration: 200.ms,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: isActive ? AppColors.info.withValues(alpha: 0.15) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-                      border: Border.all(color: isActive ? AppColors.info : theme.colorScheme.outline),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(emoji, style: const TextStyle(fontSize: 14)),
-                        const SizedBox(width: 6),
-                        Text(cat, style: AppTypography.labelMedium.copyWith(
-                          color: isActive ? AppColors.info : theme.colorScheme.onSurfaceVariant,
-                        )),
-                      ],
-                    ),
+            child: foldersAsync.when(
+              data: (folders) {
+                if (folders.isEmpty) return const Text('No folders available.');
+                return DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    value: _selectedFolder,
+                    hint: const Text('Select a folder'),
+                    items: folders.map((f) => DropdownMenuItem(
+                      value: f.name,
+                      child: Text('${f.emoji} ${f.name}'),
+                    )).toList(),
+                    onChanged: (v) => setState(() => _selectedFolder = v),
                   ),
                 );
-              }).toList(),
+              },
+              loading: () => const CircularProgressIndicator(),
+              error: (_, __) => const Text('Error loading folders'),
             ),
-            const SizedBox(height: 12),
-            // Note
-            TextField(
-              controller: _noteCtrl,
-              decoration: const InputDecoration(hintText: 'Note (optional)...'),
-              style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurface),
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _save,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text(isEditing ? 'Save Changes' : 'Save Link', style: AppTypography.labelLarge.copyWith(color: Colors.white)),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-  }
-}
+          ),
+          const SizedBox(height: 16),
 
-// ==================== CATEGORY CHIP ====================
-class _CategoryChip extends StatelessWidget {
-  final String label;
-  final String? emoji;
-  final bool isActive;
-  final VoidCallback onTap;
-  const _CategoryChip({required this.label, this.emoji, required this.isActive, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          color: isActive ? AppColors.primary : theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-          border: Border.all(color: isActive ? AppColors.primary : theme.colorScheme.outline),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (emoji != null) ...[
-              Text(emoji!, style: const TextStyle(fontSize: 12)),
-              const SizedBox(width: 4),
-            ],
-            Text(
-              label,
-              style: AppTypography.labelMedium.copyWith(color: isActive ? Colors.white : theme.colorScheme.onSurfaceVariant),
-            ),
-          ],
-        ),
+          TextField(
+            controller: _urlCtrl,
+            decoration: const InputDecoration(labelText: 'URL*', hintText: 'https://...', prefixIcon: Icon(Icons.link_rounded)),
+            keyboardType: TextInputType.url,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _titleCtrl,
+            decoration: const InputDecoration(labelText: 'Title*', prefixIcon: Icon(Icons.title_rounded)),
+            textCapitalization: TextCapitalization.sentences,
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _noteCtrl,
+            decoration: const InputDecoration(labelText: 'Note (optional)', prefixIcon: Icon(Icons.notes_rounded)),
+            maxLines: 3,
+            minLines: 1,
+            textCapitalization: TextCapitalization.sentences,
+          ),
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _save,
+            child: const Text('Save Link'),
+          ),
+        ],
       ),
     );
   }

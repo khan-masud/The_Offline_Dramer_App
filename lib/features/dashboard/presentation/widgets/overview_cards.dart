@@ -34,7 +34,7 @@ class OverviewCards extends ConsumerWidget {
                 data: (stats) => _StatCard(
                   icon: Icons.check_circle_outline_rounded,
                   iconColor: AppColors.primary,
-                  iconBgColor: AppColors.primaryLight,
+                  iconBgColor: AppColors.primary.withValues(alpha: 0.1),
                   title: 'Tasks',
                   value: '${stats.pending}',
                   subtitle: 'pending',
@@ -43,7 +43,7 @@ class OverviewCards extends ConsumerWidget {
                 loading: () => _StatCard(
                   icon: Icons.check_circle_outline_rounded,
                   iconColor: AppColors.primary,
-                  iconBgColor: AppColors.primaryLight,
+                  iconBgColor: AppColors.primary.withValues(alpha: 0.1),
                   title: 'Tasks',
                   value: '...',
                   subtitle: 'loading',
@@ -52,7 +52,7 @@ class OverviewCards extends ConsumerWidget {
                 error: (e, _) => _StatCard(
                   icon: Icons.check_circle_outline_rounded,
                   iconColor: AppColors.primary,
-                  iconBgColor: AppColors.primaryLight,
+                  iconBgColor: AppColors.primary.withValues(alpha: 0.1),
                   title: 'Tasks',
                   value: '!',
                   subtitle: 'error',

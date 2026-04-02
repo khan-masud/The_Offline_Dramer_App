@@ -17,4 +17,8 @@ class AppTypography {
   static TextStyle labelLarge = _base.copyWith(fontSize: 14, fontWeight: FontWeight.w600, height: 1.4);
   static TextStyle labelMedium = _base.copyWith(fontSize: 12, fontWeight: FontWeight.w600, height: 1.4);
   static TextStyle labelSmall = _base.copyWith(fontSize: 10, fontWeight: FontWeight.w500, height: 1.4, letterSpacing: 0.5);
+
+  // Notes specifically (optimized for mixed English + Bangla Keep-style markdown)
+  static TextStyle noteTitle = GoogleFonts.notoSansBengali(fontSize: 22, fontWeight: FontWeight.w600, height: 1.4);
+  static TextStyle noteContent = GoogleFonts.notoSansBengali(fontSize: 16, fontWeight: FontWeight.w400, height: 1.6);
 }

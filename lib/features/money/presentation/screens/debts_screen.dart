@@ -24,7 +24,7 @@ class DebtsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ধার-দেনা'),
+        title: const Text('Debts'),
         centerTitle: false,
         actions: [
           IconButton(
@@ -61,7 +61,7 @@ class DebtsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: 'দিয়েছি',
+                  label: 'Lent',
                   emoji: '📤',
                   isActive: filter == DebtFilter.given,
                   activeColor: AppColors.error,
@@ -69,7 +69,7 @@ class DebtsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: 'নিয়েছি',
+                  label: 'Borrowed',
                   emoji: '📥',
                   isActive: filter == DebtFilter.taken,
                   activeColor: AppColors.warning,
@@ -77,7 +77,7 @@ class DebtsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: 8),
                 _FilterChip(
-                  label: 'শোধ',
+                  label: 'Settled',
                   emoji: '✅',
                   isActive: filter == DebtFilter.settled,
                   activeColor: AppColors.success,
@@ -115,7 +115,7 @@ class DebtsScreen extends ConsumerWidget {
         onPressed: () => _showAddDebtSheet(context),
         backgroundColor: AppColors.primary,
         icon: const Icon(Icons.add_rounded, color: Colors.white),
-        label: Text('ধার যোগ করুন', style: AppTypography.labelLarge.copyWith(color: Colors.white)),
+        label: Text('Add Debt', style: AppTypography.labelLarge.copyWith(color: Colors.white)),
       ),
     );
   }
@@ -198,7 +198,7 @@ class _SummarySection extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text('পাওনা', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                        child: Text('Receivable', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                       ),
                     ],
                   ),
@@ -212,7 +212,7 @@ class _SummarySection extends StatelessWidget {
                   ),
                   if (summary.totalGiven > 0)
                     Text(
-                      'মোট $currencySymbol${_fmt(summary.totalGiven)}',
+                      'Total $currencySymbol${_fmt(summary.totalGiven)}',
                       style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
                 ],
@@ -239,7 +239,7 @@ class _SummarySection extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text('দেনা', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                        child: Text('Payable', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                       ),
                     ],
                   ),
@@ -253,7 +253,7 @@ class _SummarySection extends StatelessWidget {
                   ),
                   if (summary.totalTaken > 0)
                     Text(
-                      'মোট $currencySymbol${_fmt(summary.totalTaken)}',
+                      'Total $currencySymbol${_fmt(summary.totalTaken)}',
                       style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
                 ],
@@ -407,7 +407,7 @@ class _DebtTile extends ConsumerWidget {
                                   color: AppColors.success.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
                                 ),
-                                child: Text('শোধ ✅', style: AppTypography.labelSmall.copyWith(color: AppColors.success)),
+                                child: Text('Settled ✅', style: AppTypography.labelSmall.copyWith(color: AppColors.success)),
                               ),
                           ],
                         ),
@@ -421,7 +421,7 @@ class _DebtTile extends ConsumerWidget {
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              isGiven ? 'দিয়েছি' : 'নিয়েছি',
+                              isGiven ? 'Lent' : 'Borrowed',
                               style: AppTypography.labelSmall.copyWith(
                                 color: isGiven ? AppColors.error : AppColors.warning,
                               ),
@@ -460,7 +460,7 @@ class _DebtTile extends ConsumerWidget {
                       ),
                       if (!debt.isSettled && debt.paidAmount > 0)
                         Text(
-                          'বাকি $currencySymbol${_fmt(remaining)}',
+                          'Remaining $currencySymbol${_fmt(remaining)}',
                           style: AppTypography.labelSmall.copyWith(
                             color: AppColors.warning,
                           ),
@@ -607,7 +607,7 @@ class _DebtDetailScreen extends ConsumerWidget {
                           borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
                         ),
                         child: Text(
-                          isGiven ? '📤 দিয়েছি (পাওনা)' : '📥 নিয়েছি (দেনা)',
+                          isGiven ? '📤 Lent (Receivable)' : '📥 Borrowed (Payable)',
                           style: AppTypography.labelMedium.copyWith(
                             color: isGiven ? AppColors.error : AppColors.warning,
                           ),
@@ -651,11 +651,11 @@ class _DebtDetailScreen extends ConsumerWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              'পরিশোধ: $currencySymbol${_fmt(debt.paidAmount)}',
+                              'Paid: $currencySymbol${_fmt(debt.paidAmount)}',
                               style: AppTypography.labelSmall.copyWith(color: AppColors.success),
                             ),
                             Text(
-                              'বাকি: $currencySymbol${_fmt(remaining)}',
+                              'Remaining: $currencySymbol${_fmt(remaining)}',
                               style: AppTypography.labelSmall.copyWith(color: AppColors.warning),
                             ),
                           ],
@@ -1105,7 +1105,7 @@ class _AddEditDebtSheetState extends ConsumerState<_AddEditDebtSheet> {
             ),
             const SizedBox(height: 20),
             Text(
-              isEditing ? 'Edit Debt' : 'নতুন ধার',
+              isEditing ? 'Edit Debt' : 'New Debt',
               style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface),
             ),
             const SizedBox(height: 16),
@@ -1131,10 +1131,10 @@ class _AddEditDebtSheetState extends ConsumerState<_AddEditDebtSheet> {
                           Icon(Icons.arrow_upward_rounded, size: 20,
                               color: _type == 'given' ? AppColors.error : theme.colorScheme.onSurfaceVariant),
                           const SizedBox(height: 4),
-                          Text('📤 দিয়েছি', style: AppTypography.labelMedium.copyWith(
+                          Text('📤 Lent', style: AppTypography.labelMedium.copyWith(
                             color: _type == 'given' ? AppColors.error : theme.colorScheme.onSurfaceVariant,
                           )),
-                          Text('(পাওনা)', style: AppTypography.labelSmall.copyWith(
+                          Text('(Receivable)', style: AppTypography.labelSmall.copyWith(
                             color: _type == 'given' ? AppColors.error.withValues(alpha: 0.7) : theme.colorScheme.outline,
                           )),
                         ],
@@ -1161,10 +1161,10 @@ class _AddEditDebtSheetState extends ConsumerState<_AddEditDebtSheet> {
                           Icon(Icons.arrow_downward_rounded, size: 20,
                               color: _type == 'taken' ? AppColors.warning : theme.colorScheme.onSurfaceVariant),
                           const SizedBox(height: 4),
-                          Text('📥 নিয়েছি', style: AppTypography.labelMedium.copyWith(
+                          Text('📥 Borrowed', style: AppTypography.labelMedium.copyWith(
                             color: _type == 'taken' ? AppColors.warning : theme.colorScheme.onSurfaceVariant,
                           )),
-                          Text('(দেনা)', style: AppTypography.labelSmall.copyWith(
+                          Text('(Payable)', style: AppTypography.labelSmall.copyWith(
                             color: _type == 'taken' ? AppColors.warning.withValues(alpha: 0.7) : theme.colorScheme.outline,
                           )),
                         ],
@@ -1181,7 +1181,7 @@ class _AddEditDebtSheetState extends ConsumerState<_AddEditDebtSheet> {
               controller: _nameCtrl,
               autofocus: !isEditing,
               decoration: const InputDecoration(
-                hintText: 'ব্যক্তির নাম...',
+                hintText: 'Person\'s name...',
                 prefixIcon: Icon(Icons.person_outline_rounded),
               ),
             ),
@@ -1272,7 +1272,7 @@ class _AddEditDebtSheetState extends ConsumerState<_AddEditDebtSheet> {
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Text(
-                    isEditing ? 'Save Changes' : (_type == 'given' ? '📤 দিয়েছি — Save' : '📥 নিয়েছি — Save'),
+                    isEditing ? 'Save Changes' : (_type == 'given' ? '📤 Lent — Save' : '📥 Borrowed — Save'),
                     style: AppTypography.labelLarge.copyWith(color: Colors.white),
                   ),
                 ),

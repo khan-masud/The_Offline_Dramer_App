@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -14,22 +14,32 @@ import 'note_editor_screen.dart';
 // Note colors
 const _noteColors = [
   Colors.transparent, // 0 = default
-  Color(0xFFFEF3C7), // 1 = yellow
-  Color(0xFFDCFCE7), // 2 = green
-  Color(0xFFDBEAFE), // 3 = blue
-  Color(0xFFFCE7F3), // 4 = pink
-  Color(0xFFF3E8FF), // 5 = purple
-  Color(0xFFFFEDD5), // 6 = orange
+  Color(0xFFF28B82), // 1 = red
+  Color(0xFFFBBC04), // 2 = orange
+  Color(0xFFFFF475), // 3 = yellow
+  Color(0xFFCCFF90), // 4 = green
+  Color(0xFFA7FFEB), // 5 = teal
+  Color(0xFFCBF0F8), // 6 = blue
+  Color(0xFFAECBFA), // 7 = dark blue
+  Color(0xFFD7AEFB), // 8 = purple
+  Color(0xFFFDCFE8), // 9 = pink
+  Color(0xFFE6C9A8), // 10 = brown
+  Color(0xFFE8EAED), // 11 = grey
 ];
 
 const _noteColorsDark = [
   Colors.transparent,
-  Color(0xFF422006),
-  Color(0xFF052E16),
-  Color(0xFF172554),
-  Color(0xFF4A0D2B),
-  Color(0xFF2E1065),
-  Color(0xFF431407),
+  Color(0xFF5C2B29),
+  Color(0xFF614A19),
+  Color(0xFF635D19),
+  Color(0xFF345920),
+  Color(0xFF16504B),
+  Color(0xFF2D555E),
+  Color(0xFF1E3A5F),
+  Color(0xFF42275E),
+  Color(0xFF5B2245),
+  Color(0xFF442F19),
+  Color(0xFF3C3F43),
 ];
 
 class NotesScreen extends ConsumerWidget {
@@ -44,119 +54,141 @@ class NotesScreen extends ConsumerWidget {
     final activeFolder = ref.watch(noteFolderFilterProvider);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Notes'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search_rounded),
-            onPressed: () => _showSearch(context, ref),
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Folder chips
-          SizedBox(
-            height: 44,
-            child: foldersAsync.when(
-              data: (folders) {
-                if (folders.isEmpty) return const SizedBox.shrink();
-                return ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  physics: const BouncingScrollPhysics(),
-                  children: [
-                    _FolderChip(
-                      label: 'All',
-                      isActive: activeFolder == null,
-                      onTap: () => ref.read(noteFolderFilterProvider.notifier).state = null,
-                    ),
-                    ...folders.map((f) => Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: _FolderChip(
-                        label: f,
-                        isActive: activeFolder == f,
-                        onTap: () => ref.read(noteFolderFilterProvider.notifier).state = f,
-                      ),
-                    )),
-                  ],
-                );
-              },
-              loading: () => const SizedBox.shrink(),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Notes grid
-          Expanded(
-            child: notesAsync.when(
-              data: (allNotes) {
-                final hidden = ref.watch(hiddenItemsProvider);
-                final notes = allNotes.where((n) => !hidden.contains('note_${n.id}')).toList();
-                if (notes.isEmpty) return _emptyState(context);
-                return GridView.builder(
-                  padding: const EdgeInsets.all(16),
-                  physics: const BouncingScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.85,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Floating search bar (Keep-style)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+                ),
+                child: TextField(
+                  onChanged: (v) => ref.read(noteSearchProvider.notifier).state = v,
+                  decoration: InputDecoration(
+                    hintText: 'Search your notes',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: ref.watch(noteSearchProvider).isNotEmpty 
+                      ? IconButton(
+                          icon: const Icon(Icons.close_rounded),
+                          onPressed: () {
+                            ref.read(noteSearchProvider.notifier).state = '';
+                            FocusScope.of(context).unfocus();
+                          },
+                        ) 
+                      : null,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
-                  itemCount: notes.length,
-                  itemBuilder: (context, i) {
-                    final note = notes[i];
-                    final colors = isDark ? _noteColorsDark : _noteColors;
-                    final bgColor = note.colorIndex < colors.length ? colors[note.colorIndex] : Colors.transparent;
-
-                    return _NoteCard(
-                      note: note,
-                      backgroundColor: bgColor,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => NoteEditorScreen(note: note)),
-                      ),
-                      onTogglePin: () => ref.read(databaseProvider).toggleNotePin(note.id, !note.isPinned),
-                      onDelete: () {
-                        final itemKey = 'note_${note.id}';
-                        ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
-                        ScaffoldMessenger.of(context).clearSnackBars();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('Note deleted'),
-                            duration: const Duration(seconds: 4),
-                            action: SnackBarAction(
-                              label: 'UNDO',
-                              onPressed: () {
-                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                              },
-                            ),
-                          ),
-                        ).closed.then((reason) {
-                          if (reason != SnackBarClosedReason.action) {
-                            if (ref.read(hiddenItemsProvider).contains(itemKey)) {
-                              ref.read(databaseProvider).deleteNote(note.id);
-                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                            }
-                          }
-                        });
-                      },
-                    ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
-                  },
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+                ),
+              ),
             ),
-          ),
-        ],
+            // Folder chips
+            SizedBox(
+              height: 48,
+              child: foldersAsync.when(
+                data: (folders) {
+                  if (folders.isEmpty) return const SizedBox.shrink();
+                  return ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    physics: const BouncingScrollPhysics(),
+                    children: [
+                      _FolderChip(
+                        label: 'All',
+                        isActive: activeFolder == null,
+                        onTap: () => ref.read(noteFolderFilterProvider.notifier).state = null,
+                      ),
+                      ...folders.map((f) => Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: _FolderChip(
+                          label: f,
+                          isActive: activeFolder == f,
+                          onTap: () => ref.read(noteFolderFilterProvider.notifier).state = f,
+                        ),
+                      )),
+                    ],
+                  );
+                },
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
+            ),
+            // Notes staggered grid
+            Expanded(
+              child: notesAsync.when(
+                data: (allNotes) {
+                  final hidden = ref.watch(hiddenItemsProvider);
+                  final notes = allNotes.where((n) => !hidden.contains('note_${n.id}')).toList();
+                  if (notes.isEmpty) return _emptyState(context);
+                  
+                  return MasonryGridView.count(
+                    padding: const EdgeInsets.all(12),
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 10,
+                    crossAxisSpacing: 10,
+                    itemCount: notes.length,
+                    itemBuilder: (context, i) {
+                      final note = notes[i];
+                      final colors = isDark ? _noteColorsDark : _noteColors;
+                      final bgColor = note.colorIndex < colors.length ? colors[note.colorIndex] : Colors.transparent;
+
+                      return _NoteCard(
+                        note: note,
+                        backgroundColor: bgColor,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => NoteEditorScreen(note: note)),
+                        ),
+                        onTogglePin: () => ref.read(databaseProvider).toggleNotePin(note.id, !note.isPinned),
+                        onDelete: () {
+                          final itemKey = 'note_${note.id}';
+                          ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                          ScaffoldMessenger.of(context).clearSnackBars();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text('Note deleted'),
+                              duration: const Duration(seconds: 4),
+                              action: SnackBarAction(
+                                label: 'UNDO',
+                                onPressed: () {
+                                  ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                },
+                              ),
+                            ),
+                          ).closed.then((reason) {
+                            if (reason != SnackBarClosedReason.action) {
+                              if (ref.read(hiddenItemsProvider).contains(itemKey)) {
+                                ref.read(databaseProvider).deleteNote(note.id);
+                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                              }
+                            }
+                          });
+                        },
+                      ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
+                    },
+                  );
+                },
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('Error: $e')),
+              ),
+            ),
+          ],
+        ),
       ),
+      // Keep style rounded floating bottom bar or simple FAB
       floatingActionButton: FloatingActionButton(
         heroTag: 'notes_fab',
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const NoteEditorScreen()),
         ),
-        backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add_rounded, color: Colors.white),
+        backgroundColor: theme.colorScheme.primaryContainer,
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Icon(Icons.add_rounded, color: theme.colorScheme.onPrimaryContainer, size: 32),
       ),
     );
   }
@@ -167,45 +199,11 @@ class NotesScreen extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: AppColors.teal.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: const Icon(Icons.note_alt_outlined, size: 48, color: AppColors.teal),
-          ),
+          Icon(Icons.lightbulb_outline_rounded, size: 80, color: theme.colorScheme.surfaceContainerHighest),
           const SizedBox(height: 20),
-          Text('No notes yet', style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurface)),
-          const SizedBox(height: 8),
-          Text('Tap + to create your first note', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          Text('Notes you add appear here', style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ],
       ),
-    );
-  }
-
-  void _showSearch(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final controller = TextEditingController(text: ref.read(noteSearchProvider));
-        return AlertDialog(
-          title: const Text('Search Notes'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(hintText: 'Search...', prefixIcon: Icon(Icons.search_rounded)),
-            onChanged: (v) => ref.read(noteSearchProvider.notifier).state = v,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                ref.read(noteSearchProvider.notifier).state = '';
-                Navigator.pop(ctx);
-              },
-              child: const Text('Clear'),
-            ),
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
-          ],
-        );
-      },
     );
   }
 }
@@ -229,81 +227,137 @@ class _NoteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDefaultColor = backgroundColor == Colors.transparent;
 
     return GestureDetector(
       onTap: onTap,
       onLongPress: () => _showOptions(context),
       child: Container(
         decoration: BoxDecoration(
-          color: backgroundColor == Colors.transparent ? theme.cardTheme.color : backgroundColor,
+          color: isDefaultColor ? theme.scaffoldBackgroundColor : backgroundColor,
           borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
-          border: Border.all(color: theme.colorScheme.outline),
+          border: Border.all(
+            color: isDefaultColor ? theme.colorScheme.outline.withValues(alpha: 0.5) : backgroundColor,
+            width: 1,
+          ),
         ),
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Pin + folder
-            Row(
-              children: [
-                if (note.isPinned)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Icon(Icons.push_pin_rounded, size: 14, color: AppColors.warning),
-                  ),
-                if (note.folder != null)
-                  Expanded(
-                    child: Text(
-                      note.folder!,
-                      style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                      overflow: TextOverflow.ellipsis,
+            // Title and Pin
+            if (note.title.isNotEmpty || note.isPinned)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (note.title.isNotEmpty)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          note.title,
+                          style: AppTypography.noteTitle.copyWith(
+                            color: isDefaultColor ? theme.colorScheme.onSurface : Colors.black87,
+                            fontSize: 16,
+                            height: 1.3,
+                          ),
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                  else
+                    const Spacer(),
+                  if (note.isPinned)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Icon(Icons.push_pin_rounded, size: 16, color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black54),
                     ),
-                  )
-                else
-                  const Spacer(),
-              ],
-            ),
-            const SizedBox(height: 8),
-            // Title
-            Text(
-              note.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface),
-            ),
-            const SizedBox(height: 4),
-            // Content preview
-            Expanded(
-              child: Text(
-                note.content.isEmpty ? 'No content' : note.content,
-                maxLines: 4,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.bodySmall.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                  height: 1.4,
+                ],
+              ),
+            
+            // Content
+            if (note.content.isNotEmpty)
+              _buildContentPreview(context, isDefaultColor),
+
+            // Folder Label
+            if (note.folder != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDefaultColor ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5) : Colors.black12,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    note.folder!,
+                    style: AppTypography.labelSmall.copyWith(color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black87),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ),
-            ),
-            // Date
-            const SizedBox(height: 6),
-            Text(
-              _formatDate(note.updatedAt),
-              style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
           ],
         ),
       ),
     );
   }
 
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
-    if (diff.inDays < 1) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return DateFormat('MMM d').format(date);
+  Widget _buildContentPreview(BuildContext context, bool isDefaultColor) {
+    final theme = Theme.of(context);
+    final isChecklist = note.content.startsWith('- [ ] ') || note.content.startsWith('- [x] ');
+    
+    final lines = note.content.split('\n').take(8).toList();
+    
+    if (isChecklist) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: lines.map((line) {
+          if (line.trim().isEmpty) return const SizedBox.shrink();
+          final isChecked = line.contains('[x]');
+          final text = line.replaceFirst(RegExp(r'- \[( |x)\] '), '');
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  isChecked ? Icons.check_box_outlined : Icons.check_box_outline_blank,
+                  size: 16,
+                  color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black54,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.noteContent.copyWith(
+                      fontSize: 14,
+                      color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black87,
+                      decoration: isChecked ? TextDecoration.lineThrough : null,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      );
+    }
+
+    return Text(
+      note.content,
+      maxLines: 8,
+      overflow: TextOverflow.ellipsis,
+      style: AppTypography.noteContent.copyWith(
+        fontSize: 14,
+        color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black87,
+        height: 1.4,
+      ),
+    );
   }
 
   void _showOptions(BuildContext context) {
@@ -315,12 +369,12 @@ class _NoteCard extends StatelessWidget {
           children: [
             ListTile(
               leading: Icon(note.isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded),
-              title: Text(note.isPinned ? 'Unpin' : 'Pin'),
+              title: Text(note.isPinned ? 'Unpin note' : 'Pin note'),
               onTap: () { Navigator.pop(ctx); onTogglePin(); },
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
-              title: const Text('Delete', style: TextStyle(color: AppColors.error)),
+              title: const Text('Delete note', style: TextStyle(color: AppColors.error)),
               onTap: () { Navigator.pop(ctx); onDelete(); },
             ),
           ],
@@ -344,13 +398,17 @@ class _FolderChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? AppColors.primary : theme.colorScheme.surface,
+          color: isActive ? theme.colorScheme.secondaryContainer : Colors.transparent,
           borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-          border: Border.all(color: isActive ? AppColors.primary : theme.colorScheme.outline),
+          border: Border.all(
+            color: isActive ? Colors.transparent : theme.colorScheme.outline.withValues(alpha: 0.5),
+          ),
         ),
         child: Text(
           label,
-          style: AppTypography.labelMedium.copyWith(color: isActive ? Colors.white : theme.colorScheme.onSurfaceVariant),
+          style: AppTypography.labelMedium.copyWith(
+            color: isActive ? theme.colorScheme.onSecondaryContainer : theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );

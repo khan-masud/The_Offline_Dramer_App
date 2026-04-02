@@ -122,7 +122,10 @@ class WeatherTimeline extends ConsumerWidget {
                           children: [
                             Text(
                               weather.hourly[0].icon,
-                              style: const TextStyle(fontSize: 40),
+                              style: const TextStyle(
+                                fontSize: 40,
+                                fontFamilyFallback: ['Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji'],
+                              ),
                             ),
                             Text(
                               'H: ${weather.maxTemp.round()}°  L: ${weather.minTemp.round()}°',
@@ -194,10 +197,12 @@ class WeatherTimeline extends ConsumerWidget {
                                           : FontWeight.normal,
                                 ),
                               ),
-                              const SizedBox(height: 6),
                               Text(
                                 item.icon,
-                                style: const TextStyle(fontSize: 22),
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontFamilyFallback: ['Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji'],
+                                ),
                               ),
                               const SizedBox(height: 6),
                               Text(

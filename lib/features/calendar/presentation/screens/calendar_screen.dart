@@ -45,105 +45,113 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
         title: const Text('Calendar'),
         centerTitle: false,
       ),
-      body: Column(
-        children: [
-          // Month selector
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          SliverToBoxAdapter(
+            child: Column(
               children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left_rounded),
-                  onPressed: () => setState(() {
-                    _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
-                    _selectedDay = null;
-                  }),
-                  visualDensity: VisualDensity.compact,
-                ),
-                GestureDetector(
-                  onTap: () {
-                    final now = DateTime.now();
-                    setState(() {
-                      _selectedMonth = DateTime(now.year, now.month);
-                      _selectedDay = DateTime(now.year, now.month, now.day);
-                    });
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surface,
-                      borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-                      border: Border.all(color: theme.colorScheme.outline),
-                    ),
-                    child: Text(
-                      DateFormat('MMMM yyyy').format(_selectedMonth),
-                      style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface),
-                    ),
+                // Month selector
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left_rounded),
+                        onPressed: () => setState(() {
+                          _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
+                          _selectedDay = null;
+                        }),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          final now = DateTime.now();
+                          setState(() {
+                            _selectedMonth = DateTime(now.year, now.month);
+                            _selectedDay = DateTime(now.year, now.month, now.day);
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.surface,
+                            borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+                            border: Border.all(color: theme.colorScheme.outline),
+                          ),
+                          child: Text(
+                            DateFormat('MMMM yyyy').format(_selectedMonth),
+                            style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right_rounded),
+                        onPressed: () => setState(() {
+                          _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1);
+                          _selectedDay = null;
+                        }),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right_rounded),
-                  onPressed: () => setState(() {
-                    _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1);
-                    _selectedDay = null;
-                  }),
-                  visualDensity: VisualDensity.compact,
+
+                // Calendar grid
+                eventsAsync.when(
+                  data: (events) => _CalendarGrid(
+                    month: _selectedMonth,
+                    events: events,
+                    selectedDay: _selectedDay,
+                    onDayTap: (day) => setState(() => _selectedDay = day),
+                  ),
+                  loading: () => _CalendarGrid(
+                    month: _selectedMonth,
+                    events: const {},
+                    selectedDay: _selectedDay,
+                    onDayTap: (day) => setState(() => _selectedDay = day),
+                  ),
+                  error: (_, __) => _CalendarGrid(
+                    month: _selectedMonth,
+                    events: const {},
+                    selectedDay: _selectedDay,
+                    onDayTap: (day) => setState(() => _selectedDay = day),
+                  ),
                 ),
+
+                const SizedBox(height: 8),
+                Divider(height: 1, color: theme.colorScheme.outline),
               ],
             ),
           ),
 
-          // Calendar grid
-          eventsAsync.when(
-            data: (events) => _CalendarGrid(
-              month: _selectedMonth,
-              events: events,
-              selectedDay: _selectedDay,
-              onDayTap: (day) => setState(() => _selectedDay = day),
-            ),
-            loading: () => _CalendarGrid(
-              month: _selectedMonth,
-              events: const {},
-              selectedDay: _selectedDay,
-              onDayTap: (day) => setState(() => _selectedDay = day),
-            ),
-            error: (_, __) => _CalendarGrid(
-              month: _selectedMonth,
-              events: const {},
-              selectedDay: _selectedDay,
-              onDayTap: (day) => setState(() => _selectedDay = day),
-            ),
-          ),
-
-          const SizedBox(height: 8),
-          Divider(height: 1, color: theme.colorScheme.outline),
-
           // Day events
-          Expanded(
-            child: eventsAsync.when(
-              data: (events) {
-                if (_selectedDay == null) {
-                  return _noSelection(theme);
-                }
-                final dayEvents = events[_selectedDay] ?? [];
-                if (dayEvents.isEmpty) {
-                  return _noDayEvents(theme);
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: dayEvents.length,
-                  itemBuilder: (context, i) {
-                    final event = dayEvents[i];
-                    return _EventTile(event: event)
-                        .animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
-                  },
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (_, __) => _noSelection(theme),
-            ),
+          eventsAsync.when(
+            data: (events) {
+              if (_selectedDay == null) {
+                return SliverFillRemaining(hasScrollBody: false, child: _noSelection(theme));
+              }
+              final dayEvents = events[_selectedDay] ?? [];
+              if (dayEvents.isEmpty) {
+                return SliverFillRemaining(hasScrollBody: false, child: _noDayEvents(theme));
+              }
+              return SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) {
+                      final event = dayEvents[i];
+                      return _EventTile(event: event)
+                          .animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
+                    },
+                    childCount: dayEvents.length,
+                  ),
+                ),
+              );
+            },
+            loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator())),
+            error: (_, __) => SliverFillRemaining(hasScrollBody: false, child: _noSelection(theme)),
           ),
         ],
       ),

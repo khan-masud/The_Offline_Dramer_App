@@ -108,6 +108,15 @@ class MonthlyBudgets extends Table {
   RealColumn get budgetAmount => real()();
 }
 
+// ==================== LINK FOLDERS ====================
+class LinkFolders extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get name => text().withLength(min: 1, max: 100)();
+  TextColumn get emoji => text().withDefault(const Constant('📁'))();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime()();
+}
+
 // ==================== LINKS ====================
 class Links extends Table {
   IntColumn get id => integer().autoIncrement()();
@@ -163,14 +172,14 @@ class DebtPayments extends Table {
 @DriftDatabase(tables: [
   Todos, SubTasks, FocusSessions, 
   Notes, Routines, RoutineItems, RoutineSubTasks, RoutineCompletions,
-  Transactions, MonthlyBudgets, Links, Habits, HabitCompletions,
+  Transactions, MonthlyBudgets, LinkFolders, Links, Habits, HabitCompletions,
   Debts, DebtPayments,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(conn.connect());
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -211,6 +220,9 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(habits, habits.reminderTime);
         await m.addColumn(transactions, transactions.isRecurring);
         await m.addColumn(transactions, transactions.recurringPattern);
+      }
+      if (from < 10) {
+        await m.createTable(linkFolders);
       }
     },
   );
@@ -489,6 +501,38 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> deleteBudget(String month) =>
       (delete(monthlyBudgets)..where((b) => b.month.equals(month))).go();
+
+  // === LINK FOLDER QUERIES ===
+  Stream<List<LinkFolder>> watchAllLinkFolders() =>
+      (select(linkFolders)..orderBy([
+        (f) => OrderingTerm.asc(f.sortOrder),
+        (f) => OrderingTerm.asc(f.createdAt),
+      ])).watch();
+
+  Future<List<LinkFolder>> getAllLinkFolders() =>
+      (select(linkFolders)..orderBy([
+        (f) => OrderingTerm.asc(f.sortOrder),
+        (f) => OrderingTerm.asc(f.createdAt),
+      ])).get();
+
+  Future<int> addLinkFolder(LinkFoldersCompanion entry) => into(linkFolders).insert(entry);
+
+  Future<bool> updateLinkFolder(LinkFoldersCompanion entry) =>
+      (update(linkFolders)..where((f) => f.id.equals(entry.id.value))).write(entry).then((rows) => rows > 0);
+
+  Future<int> deleteLinkFolder(int id) async {
+    // Delete all links in this folder first
+    final folder = await (select(linkFolders)..where((f) => f.id.equals(id))).getSingleOrNull();
+    if (folder != null) {
+      await (delete(links)..where((l) => l.category.equals(folder.name))).go();
+    }
+    return (delete(linkFolders)..where((f) => f.id.equals(id))).go();
+  }
+
+  Future<int> getLinkCountInFolder(String folderName) async {
+    final result = await (select(links)..where((l) => l.category.equals(folderName))).get();
+    return result.length;
+  }
 
   // === LINK QUERIES ===
   Stream<List<Link>> watchAllLinks({String? category}) {
