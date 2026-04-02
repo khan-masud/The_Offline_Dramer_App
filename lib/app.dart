@@ -10,6 +10,7 @@ import 'features/stopwatch/presentation/screens/stopwatch_screen.dart';
 import 'features/pomodoro/presentation/screens/pomodoro_screen.dart';
 import 'features/habits/presentation/screens/habits_screen.dart';
 import 'features/calendar/presentation/screens/calendar_screen.dart';
+import 'features/money/presentation/screens/debts_screen.dart';
 import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
 
@@ -35,6 +36,7 @@ class TODApp extends ConsumerWidget {
         '/pomodoro': (context) => const PomodoroScreen(),
         '/habits': (context) => const HabitsScreen(),
         '/calendar': (context) => const CalendarScreen(),
+        '/debts': (context) => const DebtsScreen(),
       },
     );
   }

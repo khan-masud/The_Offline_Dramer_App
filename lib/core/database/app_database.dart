@@ -1,4 +1,4 @@
-﻿import 'package:drift/drift.dart';
+import 'package:drift/drift.dart';
 import 'connection/connection.dart' as conn;
 
 part 'app_database.g.dart';
@@ -132,17 +132,41 @@ class HabitCompletions extends Table {
   DateTimeColumn get completedDate => dateTime()();
 }
 
+// ==================== DEBTS ====================
+class Debts extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get personName => text().withLength(min: 1, max: 200)();
+  RealColumn get amount => real()();
+  RealColumn get paidAmount => real().withDefault(const Constant(0))();
+  TextColumn get type => text()(); // 'given' (I lent) or 'taken' (I borrowed)
+  TextColumn get note => text().nullable()();
+  TextColumn get phone => text().nullable()();
+  DateTimeColumn get dueDate => dateTime().nullable()();
+  BoolColumn get isSettled => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+}
+
+class DebtPayments extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get debtId => integer().references(Debts, #id)();
+  RealColumn get amount => real()();
+  TextColumn get note => text().nullable()();
+  DateTimeColumn get paidAt => dateTime()();
+}
+
 // ==================== DATABASE ====================
 @DriftDatabase(tables: [
   Todos, SubTasks, FocusSessions, 
   Notes, Routines, RoutineItems, RoutineSubTasks, RoutineCompletions,
   Transactions, MonthlyBudgets, Links, Habits, HabitCompletions,
+  Debts, DebtPayments,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(conn.connect());
 
   @override
-int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -173,6 +197,10 @@ int get schemaVersion => 7;
       }
       if (from < 7) {
         await m.createTable(routineSubTasks);
+      }
+      if (from < 8) {
+        await m.createTable(debts);
+        await m.createTable(debtPayments);
       }
     },
   );
@@ -652,6 +680,93 @@ int get schemaVersion => 7;
 
     return events;
   }
+
+  // === DEBT QUERIES ===
+  Stream<List<Debt>> watchAllDebts({bool? isSettled, String? type}) {
+    final query = select(debts)..orderBy([
+      (d) => OrderingTerm.asc(d.isSettled),
+      (d) => OrderingTerm.desc(d.createdAt),
+    ]);
+    if (isSettled != null) {
+      query.where((d) => d.isSettled.equals(isSettled));
+    }
+    if (type != null) {
+      query.where((d) => d.type.equals(type));
+    }
+    return query.watch();
+  }
+
+  Future<Debt?> getDebt(int id) =>
+      (select(debts)..where((d) => d.id.equals(id))).getSingleOrNull();
+
+  Future<int> addDebt(DebtsCompanion entry) => into(debts).insert(entry);
+
+  Future<bool> updateDebt(DebtsCompanion entry) =>
+      (update(debts)..where((d) => d.id.equals(entry.id.value))).write(entry).then((rows) => rows > 0);
+
+  Future<int> deleteDebt(int id) async {
+    await (delete(debtPayments)..where((p) => p.debtId.equals(id))).go();
+    return (delete(debts)..where((d) => d.id.equals(id))).go();
+  }
+
+  Future<void> settleDebt(int id) =>
+      (update(debts)..where((d) => d.id.equals(id))).write(
+        DebtsCompanion(
+          isSettled: const Value(true),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+
+  Future<void> unsettleDebt(int id) =>
+      (update(debts)..where((d) => d.id.equals(id))).write(
+        DebtsCompanion(
+          isSettled: const Value(false),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+
+  // Payments
+  Stream<List<DebtPayment>> watchDebtPayments(int debtId) {
+    return (select(debtPayments)
+          ..where((p) => p.debtId.equals(debtId))
+          ..orderBy([(p) => OrderingTerm.desc(p.paidAt)]))
+        .watch();
+  }
+
+  Future<int> addDebtPayment(DebtPaymentsCompanion entry) async {
+    final paymentId = await into(debtPayments).insert(entry);
+    // Update paid amount on debt
+    final payments = await (select(debtPayments)..where((p) => p.debtId.equals(entry.debtId.value))).get();
+    final totalPaid = payments.fold<double>(0, (sum, p) => sum + p.amount);
+    final debt = await getDebt(entry.debtId.value);
+    if (debt != null) {
+      final isFullyPaid = totalPaid >= debt.amount;
+      await (update(debts)..where((d) => d.id.equals(entry.debtId.value))).write(
+        DebtsCompanion(
+          paidAmount: Value(totalPaid),
+          isSettled: Value(isFullyPaid),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+    }
+    return paymentId;
+  }
+
+  Future<int> deleteDebtPayment(int paymentId, int debtId) async {
+    final result = await (delete(debtPayments)..where((p) => p.id.equals(paymentId))).go();
+    // Recalculate paid amount
+    final payments = await (select(debtPayments)..where((p) => p.debtId.equals(debtId))).get();
+    final totalPaid = payments.fold<double>(0, (sum, p) => sum + p.amount);
+    final debt = await getDebt(debtId);
+    if (debt != null) {
+      await (update(debts)..where((d) => d.id.equals(debtId))).write(
+        DebtsCompanion(
+          paidAmount: Value(totalPaid),
+          isSettled: Value(totalPaid >= debt.amount),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+    }
+    return result;
+  }
 }
-
-

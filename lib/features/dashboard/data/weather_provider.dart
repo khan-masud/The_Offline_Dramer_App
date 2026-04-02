@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -35,11 +35,6 @@ class WeatherInfo {
     required this.minTemp,
     required this.hourly,
   });
-}
-
-String _getConditionText(int code) {
-  // WeatherAPI conditions (https://www.weatherapi.com/docs/weather_conditions.json)
-  return 'Unknown'; // Fallback if somehow not provided natively by API.
 }
 
 String _getIcon(int code) {
@@ -133,7 +128,6 @@ final weatherProvider = FutureProvider<WeatherInfo?>((ref) async {
 
     final currentObj = weatherData['current'];
     final currentTemp = (currentObj['temp_c'] as num).toDouble();
-    final currentCode = (currentObj['condition']['code'] as num).toInt();
     final conditionText = currentObj['condition']['text'] as String;
 
     final todayForecast = weatherData['forecast']['forecastday'][0]['day'];

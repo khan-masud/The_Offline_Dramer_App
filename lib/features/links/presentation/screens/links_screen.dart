@@ -17,7 +17,6 @@ class LinksScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final linksAsync = ref.watch(filteredLinksProvider);
     final categoriesAsync = ref.watch(linkCategoriesProvider);
     final activeCategory = ref.watch(linkCategoryFilterProvider);

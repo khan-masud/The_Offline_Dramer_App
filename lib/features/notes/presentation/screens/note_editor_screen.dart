@@ -84,12 +84,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     if (mounted) Navigator.pop(context);
   }
 
-  Future<bool> _onWillPop() async {
-    if (_hasChanges && _titleCtrl.text.trim().isNotEmpty) {
-      await _save();
-    }
-    return true;
-  }
 
   @override
   Widget build(BuildContext context) {

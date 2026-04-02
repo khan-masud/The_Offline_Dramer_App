@@ -37,6 +37,7 @@ class MoreScreen extends StatelessWidget {
                     _ModuleCard(icon: Icons.hourglass_bottom_rounded, label: 'Pomodoro', color: AppColors.error, route: '/pomodoro'),
                     _ModuleCard(icon: Icons.trending_up_rounded, label: 'Habits', color: AppColors.purple, route: '/habits'),
                     _ModuleCard(icon: Icons.calendar_month_rounded, label: 'Calendar', color: AppColors.pink, route: '/calendar'),
+                    _ModuleCard(icon: Icons.handshake_outlined, label: 'ধার-দেনা', color: AppColors.orange, route: '/debts'),
                     _ModuleCard(icon: Icons.cloud_upload_outlined, label: 'Backup', color: AppColors.primary, route: '/settings'),
                     _ModuleCard(icon: Icons.settings_outlined, label: 'Settings', color: AppColors.lightTextSecondary, route: '/settings'),
                   ].asMap().entries.map((e) {

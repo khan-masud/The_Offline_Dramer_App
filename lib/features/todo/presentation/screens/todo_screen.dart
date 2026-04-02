@@ -1038,7 +1038,8 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
                   firstDate: DateTime.now().subtract(const Duration(days: 365)),
                   lastDate: DateTime.now().add(const Duration(days: 3650)),
                 );
-                if (date != null && mounted) {
+                if (date != null) {
+                  if (!context.mounted) return;
                   final time = await showTimePicker(
                     context: context,
                     initialTime: TimeOfDay.now(),
@@ -1083,7 +1084,8 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
                   firstDate: DateTime.now(),
                   lastDate: DateTime.now().add(const Duration(days: 3650)),
                 );
-                if (date != null && mounted) {
+                if (date != null) {
+                  if (!context.mounted) return;
                   final time = await showTimePicker(
                     context: context,
                     initialTime: TimeOfDay.now(),
