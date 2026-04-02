@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/theme/app_colors.dart';
@@ -10,6 +11,7 @@ import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../providers/notification_preferences_provider.dart';
+import '../../../../core/providers/undo_provider.dart';
 import '../../data/routine_provider.dart';
 import 'routine_timer_dialog.dart';
 
@@ -158,6 +160,7 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
   final _descCtrl = TextEditingController();
   final Set<int> _selectedDays = {DateTime.now().weekday};
   final List<Map<String, dynamic>> _items = [];
+  TimeOfDay? _reminderTime;
 
   @override
   void dispose() {
@@ -246,6 +249,7 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
           title: Value(title),
           description: Value(_descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim()),
           days: Value(([..._selectedDays]..sort()).join(',')),
+          reminderTime: Value(_reminderTime != null ? '${_reminderTime!.hour.toString().padLeft(2, '0')}:${_reminderTime!.minute.toString().padLeft(2, '0')}' : null),
           createdAt: Value(DateTime.now()),
         ),
       );
@@ -284,9 +288,9 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
             title: 'Routine: $title',
             body: 'Time to start your morning routine!',
             daysOfWeek: _selectedDays.toList(),
-        hour: prefs.routineReminderTime.hour,
-        minute: prefs.routineReminderTime.minute,
-        alertMode: prefs.alertMode,
+            hour: _reminderTime?.hour ?? prefs.routineReminderTime.hour,
+            minute: _reminderTime?.minute ?? prefs.routineReminderTime.minute,
+            alertMode: prefs.alertMode,
           );
 
       if (!mounted) return;
@@ -377,7 +381,28 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
                 );
               }).toList(),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.notifications_active_rounded, color: AppColors.warning),
+              title: Text(
+                _reminderTime == null ? 'Routine Reminder Time (Optional)' : 'Reminder: ${_reminderTime!.format(context)}',
+                style: AppTypography.bodyMedium,
+              ),
+              trailing: _reminderTime != null
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () => setState(() => _reminderTime = null),
+                    )
+                  : null,
+              onTap: () async {
+                final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+                if (time != null && mounted) {
+                  setState(() => _reminderTime = time);
+                }
+              },
+            ),
+            const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -556,7 +581,25 @@ class _RoutineSection extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(routine.title, style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(routine.title, style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface), overflow: TextOverflow.ellipsis),
+                          ),
+                          const SizedBox(width: 8),
+                          ref.watch(routineStreakProvider(routine)).when(
+                            data: (streak) => streak > 0
+                                ? Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(color: AppColors.error.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
+                                    child: Text('🔥 $streak', style: AppTypography.labelSmall.copyWith(color: AppColors.error)),
+                                  )
+                                : const SizedBox.shrink(),
+                            loading: () => const SizedBox.shrink(),
+                            error: (_, __) => const SizedBox.shrink(),
+                          ),
+                        ],
+                      ),
                       if (routine.description != null)
                         Text(routine.description!, style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                     ],
@@ -594,8 +637,10 @@ class _RoutineSection extends ConsumerWidget {
 
                 return completionsAsync.when(
                   data: (completions) {
+                    final hidden = ref.watch(hiddenItemsProvider);
+                    final items = filteredItems.where((i) => !hidden.contains('routine_item_${i.id}')).toList();
                     final completedIds = completions.map((c) => c.routineItemId).toSet();
-                    final completed = filteredItems.where((i) => completedIds.contains(i.id)).length;
+                    final completed = items.where((i) => completedIds.contains(i.id)).length;
 
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -605,7 +650,7 @@ class _RoutineSection extends ConsumerWidget {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
-                            value: filteredItems.isEmpty ? 0 : completed / filteredItems.length,
+                            value: items.isEmpty ? 0 : completed / items.length,
                             backgroundColor: theme.colorScheme.outline,
                             color: AppColors.success,
                             minHeight: 6,
@@ -613,23 +658,62 @@ class _RoutineSection extends ConsumerWidget {
                         ),
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text('$completed/${filteredItems.length} completed', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                          child: Text('$completed/${items.length} completed', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                         ),
                         const SizedBox(height: 4),
-                        ...filteredItems.map((item) {
+                        ...items.map((item) {
                           final isDone = completedIds.contains(item.id);
-                          return _RoutineItemTile(
-                            item: item,
-                            routine: routine,
-                            isDone: isDone,
-                            onToggle: () async {
-                              final db = ref.read(databaseProvider);
-                              if (isDone) {
-                                await db.unmarkRoutineItemCompleted(item.id);
-                              } else {
-                                await db.markRoutineItemCompleted(item.id);
-                              }
+                          return Dismissible(
+                            key: ValueKey('dismiss_routine_item_${item.id}'),
+                            direction: DismissDirection.endToStart,
+                            background: Container(
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.only(right: 20),
+                              decoration: BoxDecoration(
+                                color: AppColors.error,
+                                borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                              ),
+                              child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+                            ),
+                            onDismissed: (_) {
+                              final itemKey = 'routine_item_${item.id}';
+                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                              
+                              ScaffoldMessenger.of(context).clearSnackBars();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Task "${item.title}" removed from routine'),
+                                  duration: const Duration(seconds: 4),
+                                  action: SnackBarAction(
+                                    label: 'UNDO',
+                                    onPressed: () {
+                                      ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                    },
+                                  ),
+                                ),
+                              ).closed.then((reason) {
+                                if (reason != SnackBarClosedReason.action) {
+                                  if (ref.read(hiddenItemsProvider).contains(itemKey)) {
+                                    ref.read(databaseProvider).deleteRoutineItem(item.id);
+                                    ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                  }
+                                }
+                              });
                             },
+                            child: _RoutineItemTile(
+                              item: item,
+                              routine: routine,
+                              isDone: isDone,
+                              onToggle: () async {
+                                final db = ref.read(databaseProvider);
+                                if (isDone) {
+                                  await db.unmarkRoutineItemCompleted(item.id);
+                                } else {
+                                  HapticFeedback.lightImpact();
+                                  await db.markRoutineItemCompleted(item.id);
+                                }
+                              },
+                            ),
                           );
                         }),
                       ],
@@ -801,6 +885,7 @@ class _RoutineItemTile extends ConsumerWidget {
                         value: st.isCompleted,
                         visualDensity: VisualDensity.compact,
                         onChanged: (v) {
+                          HapticFeedback.lightImpact();
                           ref.read(databaseProvider).toggleRoutineSubTask(st.id, v ?? false);
                         },
                       ),
@@ -1157,7 +1242,10 @@ class _ManageRoutinesScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Manage Routines')),
       body: routinesAsync.when(
-        data: (routines) {
+        data: (allRoutines) {
+          final hidden = ref.watch(hiddenItemsProvider);
+          final routines = allRoutines.where((r) => !hidden.contains('routine_${r.id}')).toList();
+
           if (routines.isEmpty) {
             return Center(
               child: Text('No routines created yet', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
@@ -1190,9 +1278,31 @@ class _ManageRoutinesScreen extends ConsumerWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
-                      onPressed: () async {
-                        await ref.read(notificationServiceProvider).cancelRoutineReminders(r.id);
-                        await ref.read(databaseProvider).deleteRoutine(r.id);
+                      onPressed: () {
+                        final itemKey = 'routine_${r.id}';
+                        ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                        
+                        ScaffoldMessenger.of(context).clearSnackBars();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Routine "${r.title}" deleted'),
+                            duration: const Duration(seconds: 4),
+                            action: SnackBarAction(
+                              label: 'UNDO',
+                              onPressed: () {
+                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                              },
+                            ),
+                          ),
+                        ).closed.then((reason) {
+                          if (reason != SnackBarClosedReason.action) {
+                            if (ref.read(hiddenItemsProvider).contains(itemKey)) {
+                              ref.read(notificationServiceProvider).cancelRoutineReminders(r.id);
+                              ref.read(databaseProvider).deleteRoutine(r.id);
+                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                            }
+                          }
+                        });
                       },
                     ),
                   ],

@@ -57,6 +57,7 @@ class Routines extends Table {
   TextColumn get title => text()();
   TextColumn get description => text().nullable()();
   TextColumn get days => text().withDefault(const Constant('1,2,3,4,5'))(); // 1=Mon..7=Sun
+  TextColumn get reminderTime => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
 }
 
@@ -95,6 +96,8 @@ class Transactions extends Table {
   TextColumn get category => text()();
   TextColumn get note => text().nullable()();
   DateTimeColumn get date => dateTime()();
+  BoolColumn get isRecurring => boolean().withDefault(const Constant(false))();
+  TextColumn get recurringPattern => text().nullable()(); // 'daily', 'weekly', 'monthly', 'yearly'
   DateTimeColumn get createdAt => dateTime()();
 }
 
@@ -123,6 +126,7 @@ class Habits extends Table {
   TextColumn get emoji => text().withDefault(const Constant('ðŸŽ¯'))();
   IntColumn get targetDaysPerWeek => integer().withDefault(const Constant(7))();
   TextColumn get color => text().withDefault(const Constant('primary'))();
+  TextColumn get reminderTime => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
 }
 
@@ -166,7 +170,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(conn.connect());
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -201,6 +205,12 @@ class AppDatabase extends _$AppDatabase {
       if (from < 8) {
         await m.createTable(debts);
         await m.createTable(debtPayments);
+      }
+      if (from < 9) {
+        await m.addColumn(routines, routines.reminderTime);
+        await m.addColumn(habits, habits.reminderTime);
+        await m.addColumn(transactions, transactions.isRecurring);
+        await m.addColumn(transactions, transactions.recurringPattern);
       }
     },
   );
@@ -361,10 +371,28 @@ class AppDatabase extends _$AppDatabase {
   Future<int> deleteRoutineSubTask(int id) =>
       (delete(routineSubTasks)..where((st) => st.id.equals(id))).go();
 
-  Future<void> toggleRoutineSubTask(int id, bool completed) =>
-      (update(routineSubTasks)..where((st) => st.id.equals(id))).write(
-        RoutineSubTasksCompanion(isCompleted: Value(completed)),
-      );
+  Future<void> toggleRoutineSubTask(int id, bool completed) async {
+    await (update(routineSubTasks)..where((st) => st.id.equals(id))).write(
+      RoutineSubTasksCompanion(isCompleted: Value(completed)),
+    );
+    if (completed) {
+      final subTask = await (select(routineSubTasks)..where((st) => st.id.equals(id))).getSingle();
+      final siblings = await (select(routineSubTasks)..where((st) => st.routineItemId.equals(subTask.routineItemId))).get();
+      if (siblings.isNotEmpty && siblings.every((st) => st.isCompleted)) {
+        // check if already completed today
+        final today = DateTime.now();
+        final start = DateTime(today.year, today.month, today.day);
+        final end = start.add(const Duration(days: 1));
+        final alreadyDone = await (select(routineCompletions)
+          ..where((c) => c.routineItemId.equals(subTask.routineItemId) &
+              c.completedDate.isBiggerOrEqualValue(start) &
+              c.completedDate.isSmallerThanValue(end))).getSingleOrNull();
+        if (alreadyDone == null) {
+          await markRoutineItemCompleted(subTask.routineItemId);
+        }
+      }
+    }
+  }
 
   // Completions
   Stream<List<RoutineCompletion>> watchTodayCompletions() {
@@ -391,6 +419,16 @@ class AppDatabase extends _$AppDatabase {
           c.completedDate.isBiggerOrEqualValue(start) &
           c.completedDate.isSmallerThanValue(end))
     ).go();
+  }
+
+  Future<List<RoutineCompletion>> getRoutineCompletions(int routineId) {
+    final query = select(routineCompletions).join([
+      innerJoin(routineItems, routineItems.id.equalsExp(routineCompletions.routineItemId))
+    ])
+      ..where(routineItems.routineId.equals(routineId))
+      ..orderBy([OrderingTerm.desc(routineCompletions.completedDate)]);
+      
+    return query.map((row) => row.readTable(routineCompletions)).get();
   }
 
   // === TRANSACTION QUERIES ===

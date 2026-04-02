@@ -1174,6 +1174,17 @@ class $RoutinesTable extends Routines with TableInfo<$RoutinesTable, Routine> {
     requiredDuringInsert: false,
     defaultValue: const Constant('1,2,3,4,5'),
   );
+  static const VerificationMeta _reminderTimeMeta = const VerificationMeta(
+    'reminderTime',
+  );
+  @override
+  late final GeneratedColumn<String> reminderTime = GeneratedColumn<String>(
+    'reminder_time',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1191,6 +1202,7 @@ class $RoutinesTable extends Routines with TableInfo<$RoutinesTable, Routine> {
     title,
     description,
     days,
+    reminderTime,
     createdAt,
   ];
   @override
@@ -1231,6 +1243,15 @@ class $RoutinesTable extends Routines with TableInfo<$RoutinesTable, Routine> {
         days.isAcceptableOrUnknown(data['days']!, _daysMeta),
       );
     }
+    if (data.containsKey('reminder_time')) {
+      context.handle(
+        _reminderTimeMeta,
+        reminderTime.isAcceptableOrUnknown(
+          data['reminder_time']!,
+          _reminderTimeMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1267,6 +1288,10 @@ class $RoutinesTable extends Routines with TableInfo<$RoutinesTable, Routine> {
             DriftSqlType.string,
             data['${effectivePrefix}days'],
           )!,
+      reminderTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reminder_time'],
+      ),
       createdAt:
           attachedDatabase.typeMapping.read(
             DriftSqlType.dateTime,
@@ -1286,12 +1311,14 @@ class Routine extends DataClass implements Insertable<Routine> {
   final String title;
   final String? description;
   final String days;
+  final String? reminderTime;
   final DateTime createdAt;
   const Routine({
     required this.id,
     required this.title,
     this.description,
     required this.days,
+    this.reminderTime,
     required this.createdAt,
   });
   @override
@@ -1303,6 +1330,9 @@ class Routine extends DataClass implements Insertable<Routine> {
       map['description'] = Variable<String>(description);
     }
     map['days'] = Variable<String>(days);
+    if (!nullToAbsent || reminderTime != null) {
+      map['reminder_time'] = Variable<String>(reminderTime);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
   }
@@ -1316,6 +1346,10 @@ class Routine extends DataClass implements Insertable<Routine> {
               ? const Value.absent()
               : Value(description),
       days: Value(days),
+      reminderTime:
+          reminderTime == null && nullToAbsent
+              ? const Value.absent()
+              : Value(reminderTime),
       createdAt: Value(createdAt),
     );
   }
@@ -1330,6 +1364,7 @@ class Routine extends DataClass implements Insertable<Routine> {
       title: serializer.fromJson<String>(json['title']),
       description: serializer.fromJson<String?>(json['description']),
       days: serializer.fromJson<String>(json['days']),
+      reminderTime: serializer.fromJson<String?>(json['reminderTime']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
   }
@@ -1341,6 +1376,7 @@ class Routine extends DataClass implements Insertable<Routine> {
       'title': serializer.toJson<String>(title),
       'description': serializer.toJson<String?>(description),
       'days': serializer.toJson<String>(days),
+      'reminderTime': serializer.toJson<String?>(reminderTime),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
   }
@@ -1350,12 +1386,14 @@ class Routine extends DataClass implements Insertable<Routine> {
     String? title,
     Value<String?> description = const Value.absent(),
     String? days,
+    Value<String?> reminderTime = const Value.absent(),
     DateTime? createdAt,
   }) => Routine(
     id: id ?? this.id,
     title: title ?? this.title,
     description: description.present ? description.value : this.description,
     days: days ?? this.days,
+    reminderTime: reminderTime.present ? reminderTime.value : this.reminderTime,
     createdAt: createdAt ?? this.createdAt,
   );
   Routine copyWithCompanion(RoutinesCompanion data) {
@@ -1365,6 +1403,10 @@ class Routine extends DataClass implements Insertable<Routine> {
       description:
           data.description.present ? data.description.value : this.description,
       days: data.days.present ? data.days.value : this.days,
+      reminderTime:
+          data.reminderTime.present
+              ? data.reminderTime.value
+              : this.reminderTime,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -1376,13 +1418,15 @@ class Routine extends DataClass implements Insertable<Routine> {
           ..write('title: $title, ')
           ..write('description: $description, ')
           ..write('days: $days, ')
+          ..write('reminderTime: $reminderTime, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, title, description, days, createdAt);
+  int get hashCode =>
+      Object.hash(id, title, description, days, reminderTime, createdAt);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1391,6 +1435,7 @@ class Routine extends DataClass implements Insertable<Routine> {
           other.title == this.title &&
           other.description == this.description &&
           other.days == this.days &&
+          other.reminderTime == this.reminderTime &&
           other.createdAt == this.createdAt);
 }
 
@@ -1399,12 +1444,14 @@ class RoutinesCompanion extends UpdateCompanion<Routine> {
   final Value<String> title;
   final Value<String?> description;
   final Value<String> days;
+  final Value<String?> reminderTime;
   final Value<DateTime> createdAt;
   const RoutinesCompanion({
     this.id = const Value.absent(),
     this.title = const Value.absent(),
     this.description = const Value.absent(),
     this.days = const Value.absent(),
+    this.reminderTime = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
   RoutinesCompanion.insert({
@@ -1412,6 +1459,7 @@ class RoutinesCompanion extends UpdateCompanion<Routine> {
     required String title,
     this.description = const Value.absent(),
     this.days = const Value.absent(),
+    this.reminderTime = const Value.absent(),
     required DateTime createdAt,
   }) : title = Value(title),
        createdAt = Value(createdAt);
@@ -1420,6 +1468,7 @@ class RoutinesCompanion extends UpdateCompanion<Routine> {
     Expression<String>? title,
     Expression<String>? description,
     Expression<String>? days,
+    Expression<String>? reminderTime,
     Expression<DateTime>? createdAt,
   }) {
     return RawValuesInsertable({
@@ -1427,6 +1476,7 @@ class RoutinesCompanion extends UpdateCompanion<Routine> {
       if (title != null) 'title': title,
       if (description != null) 'description': description,
       if (days != null) 'days': days,
+      if (reminderTime != null) 'reminder_time': reminderTime,
       if (createdAt != null) 'created_at': createdAt,
     });
   }
@@ -1436,6 +1486,7 @@ class RoutinesCompanion extends UpdateCompanion<Routine> {
     Value<String>? title,
     Value<String?>? description,
     Value<String>? days,
+    Value<String?>? reminderTime,
     Value<DateTime>? createdAt,
   }) {
     return RoutinesCompanion(
@@ -1443,6 +1494,7 @@ class RoutinesCompanion extends UpdateCompanion<Routine> {
       title: title ?? this.title,
       description: description ?? this.description,
       days: days ?? this.days,
+      reminderTime: reminderTime ?? this.reminderTime,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -1462,6 +1514,9 @@ class RoutinesCompanion extends UpdateCompanion<Routine> {
     if (days.present) {
       map['days'] = Variable<String>(days.value);
     }
+    if (reminderTime.present) {
+      map['reminder_time'] = Variable<String>(reminderTime.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -1475,6 +1530,7 @@ class RoutinesCompanion extends UpdateCompanion<Routine> {
           ..write('title: $title, ')
           ..write('description: $description, ')
           ..write('days: $days, ')
+          ..write('reminderTime: $reminderTime, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -3758,6 +3814,32 @@ class $TransactionsTable extends Transactions
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _isRecurringMeta = const VerificationMeta(
+    'isRecurring',
+  );
+  @override
+  late final GeneratedColumn<bool> isRecurring = GeneratedColumn<bool>(
+    'is_recurring',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_recurring" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _recurringPatternMeta = const VerificationMeta(
+    'recurringPattern',
+  );
+  @override
+  late final GeneratedColumn<String> recurringPattern = GeneratedColumn<String>(
+    'recurring_pattern',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -3778,6 +3860,8 @@ class $TransactionsTable extends Transactions
     category,
     note,
     date,
+    isRecurring,
+    recurringPattern,
     createdAt,
   ];
   @override
@@ -3841,6 +3925,24 @@ class $TransactionsTable extends Transactions
     } else if (isInserting) {
       context.missing(_dateMeta);
     }
+    if (data.containsKey('is_recurring')) {
+      context.handle(
+        _isRecurringMeta,
+        isRecurring.isAcceptableOrUnknown(
+          data['is_recurring']!,
+          _isRecurringMeta,
+        ),
+      );
+    }
+    if (data.containsKey('recurring_pattern')) {
+      context.handle(
+        _recurringPatternMeta,
+        recurringPattern.isAcceptableOrUnknown(
+          data['recurring_pattern']!,
+          _recurringPatternMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -3892,6 +3994,15 @@ class $TransactionsTable extends Transactions
             DriftSqlType.dateTime,
             data['${effectivePrefix}date'],
           )!,
+      isRecurring:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.bool,
+            data['${effectivePrefix}is_recurring'],
+          )!,
+      recurringPattern: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recurring_pattern'],
+      ),
       createdAt:
           attachedDatabase.typeMapping.read(
             DriftSqlType.dateTime,
@@ -3914,6 +4025,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
   final String category;
   final String? note;
   final DateTime date;
+  final bool isRecurring;
+  final String? recurringPattern;
   final DateTime createdAt;
   const Transaction({
     required this.id,
@@ -3923,6 +4036,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     required this.category,
     this.note,
     required this.date,
+    required this.isRecurring,
+    this.recurringPattern,
     required this.createdAt,
   });
   @override
@@ -3937,6 +4052,10 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       map['note'] = Variable<String>(note);
     }
     map['date'] = Variable<DateTime>(date);
+    map['is_recurring'] = Variable<bool>(isRecurring);
+    if (!nullToAbsent || recurringPattern != null) {
+      map['recurring_pattern'] = Variable<String>(recurringPattern);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
   }
@@ -3950,6 +4069,11 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       category: Value(category),
       note: note == null && nullToAbsent ? const Value.absent() : Value(note),
       date: Value(date),
+      isRecurring: Value(isRecurring),
+      recurringPattern:
+          recurringPattern == null && nullToAbsent
+              ? const Value.absent()
+              : Value(recurringPattern),
       createdAt: Value(createdAt),
     );
   }
@@ -3967,6 +4091,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       category: serializer.fromJson<String>(json['category']),
       note: serializer.fromJson<String?>(json['note']),
       date: serializer.fromJson<DateTime>(json['date']),
+      isRecurring: serializer.fromJson<bool>(json['isRecurring']),
+      recurringPattern: serializer.fromJson<String?>(json['recurringPattern']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
   }
@@ -3981,6 +4107,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       'category': serializer.toJson<String>(category),
       'note': serializer.toJson<String?>(note),
       'date': serializer.toJson<DateTime>(date),
+      'isRecurring': serializer.toJson<bool>(isRecurring),
+      'recurringPattern': serializer.toJson<String?>(recurringPattern),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
   }
@@ -3993,6 +4121,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     String? category,
     Value<String?> note = const Value.absent(),
     DateTime? date,
+    bool? isRecurring,
+    Value<String?> recurringPattern = const Value.absent(),
     DateTime? createdAt,
   }) => Transaction(
     id: id ?? this.id,
@@ -4002,6 +4132,11 @@ class Transaction extends DataClass implements Insertable<Transaction> {
     category: category ?? this.category,
     note: note.present ? note.value : this.note,
     date: date ?? this.date,
+    isRecurring: isRecurring ?? this.isRecurring,
+    recurringPattern:
+        recurringPattern.present
+            ? recurringPattern.value
+            : this.recurringPattern,
     createdAt: createdAt ?? this.createdAt,
   );
   Transaction copyWithCompanion(TransactionsCompanion data) {
@@ -4013,6 +4148,12 @@ class Transaction extends DataClass implements Insertable<Transaction> {
       category: data.category.present ? data.category.value : this.category,
       note: data.note.present ? data.note.value : this.note,
       date: data.date.present ? data.date.value : this.date,
+      isRecurring:
+          data.isRecurring.present ? data.isRecurring.value : this.isRecurring,
+      recurringPattern:
+          data.recurringPattern.present
+              ? data.recurringPattern.value
+              : this.recurringPattern,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -4027,14 +4168,26 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           ..write('category: $category, ')
           ..write('note: $note, ')
           ..write('date: $date, ')
+          ..write('isRecurring: $isRecurring, ')
+          ..write('recurringPattern: $recurringPattern, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, amount, type, title, category, note, date, createdAt);
+  int get hashCode => Object.hash(
+    id,
+    amount,
+    type,
+    title,
+    category,
+    note,
+    date,
+    isRecurring,
+    recurringPattern,
+    createdAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -4046,6 +4199,8 @@ class Transaction extends DataClass implements Insertable<Transaction> {
           other.category == this.category &&
           other.note == this.note &&
           other.date == this.date &&
+          other.isRecurring == this.isRecurring &&
+          other.recurringPattern == this.recurringPattern &&
           other.createdAt == this.createdAt);
 }
 
@@ -4057,6 +4212,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
   final Value<String> category;
   final Value<String?> note;
   final Value<DateTime> date;
+  final Value<bool> isRecurring;
+  final Value<String?> recurringPattern;
   final Value<DateTime> createdAt;
   const TransactionsCompanion({
     this.id = const Value.absent(),
@@ -4066,6 +4223,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     this.category = const Value.absent(),
     this.note = const Value.absent(),
     this.date = const Value.absent(),
+    this.isRecurring = const Value.absent(),
+    this.recurringPattern = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
   TransactionsCompanion.insert({
@@ -4076,6 +4235,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     required String category,
     this.note = const Value.absent(),
     required DateTime date,
+    this.isRecurring = const Value.absent(),
+    this.recurringPattern = const Value.absent(),
     required DateTime createdAt,
   }) : amount = Value(amount),
        type = Value(type),
@@ -4091,6 +4252,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     Expression<String>? category,
     Expression<String>? note,
     Expression<DateTime>? date,
+    Expression<bool>? isRecurring,
+    Expression<String>? recurringPattern,
     Expression<DateTime>? createdAt,
   }) {
     return RawValuesInsertable({
@@ -4101,6 +4264,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       if (category != null) 'category': category,
       if (note != null) 'note': note,
       if (date != null) 'date': date,
+      if (isRecurring != null) 'is_recurring': isRecurring,
+      if (recurringPattern != null) 'recurring_pattern': recurringPattern,
       if (createdAt != null) 'created_at': createdAt,
     });
   }
@@ -4113,6 +4278,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     Value<String>? category,
     Value<String?>? note,
     Value<DateTime>? date,
+    Value<bool>? isRecurring,
+    Value<String?>? recurringPattern,
     Value<DateTime>? createdAt,
   }) {
     return TransactionsCompanion(
@@ -4123,6 +4290,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
       category: category ?? this.category,
       note: note ?? this.note,
       date: date ?? this.date,
+      isRecurring: isRecurring ?? this.isRecurring,
+      recurringPattern: recurringPattern ?? this.recurringPattern,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -4151,6 +4320,12 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
     if (date.present) {
       map['date'] = Variable<DateTime>(date.value);
     }
+    if (isRecurring.present) {
+      map['is_recurring'] = Variable<bool>(isRecurring.value);
+    }
+    if (recurringPattern.present) {
+      map['recurring_pattern'] = Variable<String>(recurringPattern.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -4167,6 +4342,8 @@ class TransactionsCompanion extends UpdateCompanion<Transaction> {
           ..write('category: $category, ')
           ..write('note: $note, ')
           ..write('date: $date, ')
+          ..write('isRecurring: $isRecurring, ')
+          ..write('recurringPattern: $recurringPattern, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -4946,6 +5123,17 @@ class $HabitsTable extends Habits with TableInfo<$HabitsTable, Habit> {
     requiredDuringInsert: false,
     defaultValue: const Constant('primary'),
   );
+  static const VerificationMeta _reminderTimeMeta = const VerificationMeta(
+    'reminderTime',
+  );
+  @override
+  late final GeneratedColumn<String> reminderTime = GeneratedColumn<String>(
+    'reminder_time',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -4964,6 +5152,7 @@ class $HabitsTable extends Habits with TableInfo<$HabitsTable, Habit> {
     emoji,
     targetDaysPerWeek,
     color,
+    reminderTime,
     createdAt,
   ];
   @override
@@ -5010,6 +5199,15 @@ class $HabitsTable extends Habits with TableInfo<$HabitsTable, Habit> {
         color.isAcceptableOrUnknown(data['color']!, _colorMeta),
       );
     }
+    if (data.containsKey('reminder_time')) {
+      context.handle(
+        _reminderTimeMeta,
+        reminderTime.isAcceptableOrUnknown(
+          data['reminder_time']!,
+          _reminderTimeMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -5052,6 +5250,10 @@ class $HabitsTable extends Habits with TableInfo<$HabitsTable, Habit> {
             DriftSqlType.string,
             data['${effectivePrefix}color'],
           )!,
+      reminderTime: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reminder_time'],
+      ),
       createdAt:
           attachedDatabase.typeMapping.read(
             DriftSqlType.dateTime,
@@ -5072,6 +5274,7 @@ class Habit extends DataClass implements Insertable<Habit> {
   final String emoji;
   final int targetDaysPerWeek;
   final String color;
+  final String? reminderTime;
   final DateTime createdAt;
   const Habit({
     required this.id,
@@ -5079,6 +5282,7 @@ class Habit extends DataClass implements Insertable<Habit> {
     required this.emoji,
     required this.targetDaysPerWeek,
     required this.color,
+    this.reminderTime,
     required this.createdAt,
   });
   @override
@@ -5089,6 +5293,9 @@ class Habit extends DataClass implements Insertable<Habit> {
     map['emoji'] = Variable<String>(emoji);
     map['target_days_per_week'] = Variable<int>(targetDaysPerWeek);
     map['color'] = Variable<String>(color);
+    if (!nullToAbsent || reminderTime != null) {
+      map['reminder_time'] = Variable<String>(reminderTime);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     return map;
   }
@@ -5100,6 +5307,10 @@ class Habit extends DataClass implements Insertable<Habit> {
       emoji: Value(emoji),
       targetDaysPerWeek: Value(targetDaysPerWeek),
       color: Value(color),
+      reminderTime:
+          reminderTime == null && nullToAbsent
+              ? const Value.absent()
+              : Value(reminderTime),
       createdAt: Value(createdAt),
     );
   }
@@ -5115,6 +5326,7 @@ class Habit extends DataClass implements Insertable<Habit> {
       emoji: serializer.fromJson<String>(json['emoji']),
       targetDaysPerWeek: serializer.fromJson<int>(json['targetDaysPerWeek']),
       color: serializer.fromJson<String>(json['color']),
+      reminderTime: serializer.fromJson<String?>(json['reminderTime']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
     );
   }
@@ -5127,6 +5339,7 @@ class Habit extends DataClass implements Insertable<Habit> {
       'emoji': serializer.toJson<String>(emoji),
       'targetDaysPerWeek': serializer.toJson<int>(targetDaysPerWeek),
       'color': serializer.toJson<String>(color),
+      'reminderTime': serializer.toJson<String?>(reminderTime),
       'createdAt': serializer.toJson<DateTime>(createdAt),
     };
   }
@@ -5137,6 +5350,7 @@ class Habit extends DataClass implements Insertable<Habit> {
     String? emoji,
     int? targetDaysPerWeek,
     String? color,
+    Value<String?> reminderTime = const Value.absent(),
     DateTime? createdAt,
   }) => Habit(
     id: id ?? this.id,
@@ -5144,6 +5358,7 @@ class Habit extends DataClass implements Insertable<Habit> {
     emoji: emoji ?? this.emoji,
     targetDaysPerWeek: targetDaysPerWeek ?? this.targetDaysPerWeek,
     color: color ?? this.color,
+    reminderTime: reminderTime.present ? reminderTime.value : this.reminderTime,
     createdAt: createdAt ?? this.createdAt,
   );
   Habit copyWithCompanion(HabitsCompanion data) {
@@ -5156,6 +5371,10 @@ class Habit extends DataClass implements Insertable<Habit> {
               ? data.targetDaysPerWeek.value
               : this.targetDaysPerWeek,
       color: data.color.present ? data.color.value : this.color,
+      reminderTime:
+          data.reminderTime.present
+              ? data.reminderTime.value
+              : this.reminderTime,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -5168,14 +5387,22 @@ class Habit extends DataClass implements Insertable<Habit> {
           ..write('emoji: $emoji, ')
           ..write('targetDaysPerWeek: $targetDaysPerWeek, ')
           ..write('color: $color, ')
+          ..write('reminderTime: $reminderTime, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, title, emoji, targetDaysPerWeek, color, createdAt);
+  int get hashCode => Object.hash(
+    id,
+    title,
+    emoji,
+    targetDaysPerWeek,
+    color,
+    reminderTime,
+    createdAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -5185,6 +5412,7 @@ class Habit extends DataClass implements Insertable<Habit> {
           other.emoji == this.emoji &&
           other.targetDaysPerWeek == this.targetDaysPerWeek &&
           other.color == this.color &&
+          other.reminderTime == this.reminderTime &&
           other.createdAt == this.createdAt);
 }
 
@@ -5194,6 +5422,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
   final Value<String> emoji;
   final Value<int> targetDaysPerWeek;
   final Value<String> color;
+  final Value<String?> reminderTime;
   final Value<DateTime> createdAt;
   const HabitsCompanion({
     this.id = const Value.absent(),
@@ -5201,6 +5430,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
     this.emoji = const Value.absent(),
     this.targetDaysPerWeek = const Value.absent(),
     this.color = const Value.absent(),
+    this.reminderTime = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
   HabitsCompanion.insert({
@@ -5209,6 +5439,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
     this.emoji = const Value.absent(),
     this.targetDaysPerWeek = const Value.absent(),
     this.color = const Value.absent(),
+    this.reminderTime = const Value.absent(),
     required DateTime createdAt,
   }) : title = Value(title),
        createdAt = Value(createdAt);
@@ -5218,6 +5449,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
     Expression<String>? emoji,
     Expression<int>? targetDaysPerWeek,
     Expression<String>? color,
+    Expression<String>? reminderTime,
     Expression<DateTime>? createdAt,
   }) {
     return RawValuesInsertable({
@@ -5226,6 +5458,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
       if (emoji != null) 'emoji': emoji,
       if (targetDaysPerWeek != null) 'target_days_per_week': targetDaysPerWeek,
       if (color != null) 'color': color,
+      if (reminderTime != null) 'reminder_time': reminderTime,
       if (createdAt != null) 'created_at': createdAt,
     });
   }
@@ -5236,6 +5469,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
     Value<String>? emoji,
     Value<int>? targetDaysPerWeek,
     Value<String>? color,
+    Value<String?>? reminderTime,
     Value<DateTime>? createdAt,
   }) {
     return HabitsCompanion(
@@ -5244,6 +5478,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
       emoji: emoji ?? this.emoji,
       targetDaysPerWeek: targetDaysPerWeek ?? this.targetDaysPerWeek,
       color: color ?? this.color,
+      reminderTime: reminderTime ?? this.reminderTime,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -5266,6 +5501,9 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
     if (color.present) {
       map['color'] = Variable<String>(color.value);
     }
+    if (reminderTime.present) {
+      map['reminder_time'] = Variable<String>(reminderTime.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -5280,6 +5518,7 @@ class HabitsCompanion extends UpdateCompanion<Habit> {
           ..write('emoji: $emoji, ')
           ..write('targetDaysPerWeek: $targetDaysPerWeek, ')
           ..write('color: $color, ')
+          ..write('reminderTime: $reminderTime, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -7453,6 +7692,7 @@ typedef $$RoutinesTableCreateCompanionBuilder =
       required String title,
       Value<String?> description,
       Value<String> days,
+      Value<String?> reminderTime,
       required DateTime createdAt,
     });
 typedef $$RoutinesTableUpdateCompanionBuilder =
@@ -7461,6 +7701,7 @@ typedef $$RoutinesTableUpdateCompanionBuilder =
       Value<String> title,
       Value<String?> description,
       Value<String> days,
+      Value<String?> reminderTime,
       Value<DateTime> createdAt,
     });
 
@@ -7513,6 +7754,11 @@ class $$RoutinesTableFilterComposer
 
   ColumnFilters<String> get days => $composableBuilder(
     column: $table.days,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7576,6 +7822,11 @@ class $$RoutinesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -7604,6 +7855,11 @@ class $$RoutinesTableAnnotationComposer
 
   GeneratedColumn<String> get days =>
       $composableBuilder(column: $table.days, builder: (column) => column);
+
+  GeneratedColumn<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -7666,12 +7922,14 @@ class $$RoutinesTableTableManager
                 Value<String> title = const Value.absent(),
                 Value<String?> description = const Value.absent(),
                 Value<String> days = const Value.absent(),
+                Value<String?> reminderTime = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
               }) => RoutinesCompanion(
                 id: id,
                 title: title,
                 description: description,
                 days: days,
+                reminderTime: reminderTime,
                 createdAt: createdAt,
               ),
           createCompanionCallback:
@@ -7680,12 +7938,14 @@ class $$RoutinesTableTableManager
                 required String title,
                 Value<String?> description = const Value.absent(),
                 Value<String> days = const Value.absent(),
+                Value<String?> reminderTime = const Value.absent(),
                 required DateTime createdAt,
               }) => RoutinesCompanion.insert(
                 id: id,
                 title: title,
                 description: description,
                 days: days,
+                reminderTime: reminderTime,
                 createdAt: createdAt,
               ),
           withReferenceMapper:
@@ -9802,6 +10062,8 @@ typedef $$TransactionsTableCreateCompanionBuilder =
       required String category,
       Value<String?> note,
       required DateTime date,
+      Value<bool> isRecurring,
+      Value<String?> recurringPattern,
       required DateTime createdAt,
     });
 typedef $$TransactionsTableUpdateCompanionBuilder =
@@ -9813,6 +10075,8 @@ typedef $$TransactionsTableUpdateCompanionBuilder =
       Value<String> category,
       Value<String?> note,
       Value<DateTime> date,
+      Value<bool> isRecurring,
+      Value<String?> recurringPattern,
       Value<DateTime> createdAt,
     });
 
@@ -9857,6 +10121,16 @@ class $$TransactionsTableFilterComposer
 
   ColumnFilters<DateTime> get date => $composableBuilder(
     column: $table.date,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isRecurring => $composableBuilder(
+    column: $table.isRecurring,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recurringPattern => $composableBuilder(
+    column: $table.recurringPattern,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9910,6 +10184,16 @@ class $$TransactionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isRecurring => $composableBuilder(
+    column: $table.isRecurring,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recurringPattern => $composableBuilder(
+    column: $table.recurringPattern,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -9945,6 +10229,16 @@ class $$TransactionsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get date =>
       $composableBuilder(column: $table.date, builder: (column) => column);
+
+  GeneratedColumn<bool> get isRecurring => $composableBuilder(
+    column: $table.isRecurring,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get recurringPattern => $composableBuilder(
+    column: $table.recurringPattern,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -9989,6 +10283,8 @@ class $$TransactionsTableTableManager
                 Value<String> category = const Value.absent(),
                 Value<String?> note = const Value.absent(),
                 Value<DateTime> date = const Value.absent(),
+                Value<bool> isRecurring = const Value.absent(),
+                Value<String?> recurringPattern = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
               }) => TransactionsCompanion(
                 id: id,
@@ -9998,6 +10294,8 @@ class $$TransactionsTableTableManager
                 category: category,
                 note: note,
                 date: date,
+                isRecurring: isRecurring,
+                recurringPattern: recurringPattern,
                 createdAt: createdAt,
               ),
           createCompanionCallback:
@@ -10009,6 +10307,8 @@ class $$TransactionsTableTableManager
                 required String category,
                 Value<String?> note = const Value.absent(),
                 required DateTime date,
+                Value<bool> isRecurring = const Value.absent(),
+                Value<String?> recurringPattern = const Value.absent(),
                 required DateTime createdAt,
               }) => TransactionsCompanion.insert(
                 id: id,
@@ -10018,6 +10318,8 @@ class $$TransactionsTableTableManager
                 category: category,
                 note: note,
                 date: date,
+                isRecurring: isRecurring,
+                recurringPattern: recurringPattern,
                 createdAt: createdAt,
               ),
           withReferenceMapper:
@@ -10464,6 +10766,7 @@ typedef $$HabitsTableCreateCompanionBuilder =
       Value<String> emoji,
       Value<int> targetDaysPerWeek,
       Value<String> color,
+      Value<String?> reminderTime,
       required DateTime createdAt,
     });
 typedef $$HabitsTableUpdateCompanionBuilder =
@@ -10473,6 +10776,7 @@ typedef $$HabitsTableUpdateCompanionBuilder =
       Value<String> emoji,
       Value<int> targetDaysPerWeek,
       Value<String> color,
+      Value<String?> reminderTime,
       Value<DateTime> createdAt,
     });
 
@@ -10532,6 +10836,11 @@ class $$HabitsTableFilterComposer
 
   ColumnFilters<String> get color => $composableBuilder(
     column: $table.color,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10600,6 +10909,11 @@ class $$HabitsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -10631,6 +10945,11 @@ class $$HabitsTableAnnotationComposer
 
   GeneratedColumn<String> get color =>
       $composableBuilder(column: $table.color, builder: (column) => column);
+
+  GeneratedColumn<String> get reminderTime => $composableBuilder(
+    column: $table.reminderTime,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -10694,6 +11013,7 @@ class $$HabitsTableTableManager
                 Value<String> emoji = const Value.absent(),
                 Value<int> targetDaysPerWeek = const Value.absent(),
                 Value<String> color = const Value.absent(),
+                Value<String?> reminderTime = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
               }) => HabitsCompanion(
                 id: id,
@@ -10701,6 +11021,7 @@ class $$HabitsTableTableManager
                 emoji: emoji,
                 targetDaysPerWeek: targetDaysPerWeek,
                 color: color,
+                reminderTime: reminderTime,
                 createdAt: createdAt,
               ),
           createCompanionCallback:
@@ -10710,6 +11031,7 @@ class $$HabitsTableTableManager
                 Value<String> emoji = const Value.absent(),
                 Value<int> targetDaysPerWeek = const Value.absent(),
                 Value<String> color = const Value.absent(),
+                Value<String?> reminderTime = const Value.absent(),
                 required DateTime createdAt,
               }) => HabitsCompanion.insert(
                 id: id,
@@ -10717,6 +11039,7 @@ class $$HabitsTableTableManager
                 emoji: emoji,
                 targetDaysPerWeek: targetDaysPerWeek,
                 color: color,
+                reminderTime: reminderTime,
                 createdAt: createdAt,
               ),
           withReferenceMapper:

@@ -10,8 +10,10 @@ import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../providers/notification_preferences_provider.dart';
+import '../../../../core/providers/undo_provider.dart';
 import '../../data/todo_provider.dart';
 import 'todo_timer_dialog.dart';
+import 'package:flutter/services.dart';
 
 class TodoScreen extends ConsumerWidget {
   const TodoScreen({super.key});
@@ -130,7 +132,10 @@ class TodoScreen extends ConsumerWidget {
             // Todo list
             Expanded(
               child: todosAsync.when(
-                data: (todos) {
+                data: (allTodos) {
+                  final hidden = ref.watch(hiddenItemsProvider);
+                  final todos = allTodos.where((t) => !hidden.contains('todo_${t.id}')).toList();
+                  
                   if (todos.isEmpty) {
                     return _EmptyState(filter: filter);
                   }
@@ -139,31 +144,52 @@ class TodoScreen extends ConsumerWidget {
                     physics: const BouncingScrollPhysics(),
                     itemCount: todos.length,
                     itemBuilder: (context, i) {
+                      final todo = todos[i];
                       return _TodoCard(
-                        todo: todos[i],
+                        todo: todo,
                         onToggle: () {
-                          if (!todos[i].isCompleted && todos[i].remindAt != null) {
-                            ref.read(notificationServiceProvider).cancelReminder(todos[i].id);
-                          } else if (todos[i].isCompleted &&
-                              todos[i].remindAt != null &&
-                              todos[i].remindAt!.isAfter(DateTime.now())) {
+                          HapticFeedback.lightImpact();
+                          if (!todo.isCompleted && todo.remindAt != null) {
+                            ref.read(notificationServiceProvider).cancelReminder(todo.id);
+                          } else if (todo.isCompleted &&
+                              todo.remindAt != null &&
+                              todo.remindAt!.isAfter(DateTime.now())) {
                             ref.read(notificationServiceProvider).scheduleTodoReminder(
-                              id: todos[i].id,
+                              id: todo.id,
                               title: 'Todo Reminder',
-                              body: todos[i].title,
-                              scheduledDate: todos[i].remindAt!,
+                              body: todo.title,
+                              scheduledDate: todo.remindAt!,
                               alertMode: ref.read(notificationPreferencesProvider).alertMode,
                             );
                           }
-                          ref.read(databaseProvider).toggleTodo(todos[i].id, !todos[i].isCompleted);
+                          ref.read(databaseProvider).toggleTodo(todo.id, !todo.isCompleted);
                         },
                         onDelete: () {
-                          ref.read(notificationServiceProvider).cancelReminder(todos[i].id);
-                          ref.read(databaseProvider).deleteTodo(todos[i].id);
+                          final itemKey = 'todo_${todo.id}';
+                          ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                          ScaffoldMessenger.of(context).clearSnackBars();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text('Todo deleted'),
+                              duration: const Duration(seconds: 4),
+                              action: SnackBarAction(
+                                label: 'UNDO',
+                                onPressed: () {
+                                  ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                },
+                              ),
+                            ),
+                          ).closed.then((reason) {
+                            if (reason != SnackBarClosedReason.action) {
+                              if (ref.read(hiddenItemsProvider).contains(itemKey)) {
+                                ref.read(notificationServiceProvider).cancelReminder(todo.id);
+                                ref.read(databaseProvider).deleteTodo(todo.id);
+                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                              }
+                            }
+                          });
                         },
-                        onEdit:
-                            () =>
-                                _showAddEditSheet(context, ref, todo: todos[i]),
+                        onEdit: () => _showAddEditSheet(context, ref, todo: todo),
                       ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
                     },
                   );
@@ -584,6 +610,7 @@ class _TodoCard extends ConsumerWidget {
                                         final isStCompleted = st.isCompleted;
                                         return GestureDetector(
                                           onTap: () {
+                                            HapticFeedback.lightImpact();
                                             ref
                                                 .read(databaseProvider)
                                                 .toggleSubTask(

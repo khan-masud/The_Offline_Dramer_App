@@ -8,15 +8,33 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/providers/undo_provider.dart';
 import '../../data/money_provider.dart';
+import '../../data/recurring_transaction_service.dart';
 import '../widgets/add_transaction_sheet.dart';
 import '../widgets/money_chart.dart';
 
-class MoneyScreen extends ConsumerWidget {
+class MoneyScreen extends ConsumerStatefulWidget {
   const MoneyScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MoneyScreen> createState() => _MoneyScreenState();
+}
+
+class _MoneyScreenState extends ConsumerState<MoneyScreen> {
+  bool _isSearching = false;
+  final TextEditingController _searchCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.watch(recurringTransactionServiceProvider);
+
     final theme = Theme.of(context);
     final selectedMonth = ref.watch(selectedMonthProvider);
     final statsAsync = ref.watch(monthStatsProvider);
@@ -36,15 +54,40 @@ class MoneyScreen extends ConsumerWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text('Money',
-                        style: AppTypography.headingLarge
-                            .copyWith(color: theme.colorScheme.onSurface)),
+                    child: _isSearching
+                        ? TextField(
+                            controller: _searchCtrl,
+                            autofocus: true,
+                            decoration: InputDecoration(
+                              hintText: 'Search transactions...',
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(99)),
+                            ),
+                            onChanged: (v) => ref.read(transactionSearchProvider.notifier).state = v,
+                          )
+                        : Text('Money',
+                            style: AppTypography.headingLarge
+                                .copyWith(color: theme.colorScheme.onSurface)),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.savings_outlined, size: 22),
-                    onPressed: () => _showBudgetDialog(context, ref),
-                    tooltip: 'Set Budget',
+                    icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded, size: 22),
+                    onPressed: () {
+                      setState(() {
+                        _isSearching = !_isSearching;
+                        if (!_isSearching) {
+                          _searchCtrl.clear();
+                          ref.read(transactionSearchProvider.notifier).state = '';
+                        }
+                      });
+                    },
                   ),
+                  if (!_isSearching)
+                    IconButton(
+                      icon: const Icon(Icons.savings_outlined, size: 22),
+                      onPressed: () => _showBudgetDialog(context, ref),
+                      tooltip: 'Set Budget',
+                    ),
                 ],
               ),
             ),
@@ -174,7 +217,10 @@ class MoneyScreen extends ConsumerWidget {
 
                   // Transaction list
                   filteredTxAsync.when(
-                    data: (txList) {
+                    data: (allTxList) {
+                      final hidden = ref.watch(hiddenItemsProvider);
+                      final txList = allTxList.where((t) => !hidden.contains('tx_${t.id}')).toList();
+
                       if (txList.isEmpty) {
                         return SliverFillRemaining(
                           hasScrollBody: false,
@@ -209,7 +255,30 @@ class MoneyScreen extends ConsumerWidget {
                                   ...group.value.asMap().entries.map((e) {
                                     return _TransactionTile(
                                       transaction: e.value,
-                                      onDelete: () => ref.read(databaseProvider).deleteTransaction(e.value.id),
+                                      onDelete: () {
+                                        final itemKey = 'tx_${e.value.id}';
+                                        ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                                        ScaffoldMessenger.of(context).clearSnackBars();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: const Text('Transaction deleted'),
+                                            duration: const Duration(seconds: 4),
+                                            action: SnackBarAction(
+                                              label: 'UNDO',
+                                              onPressed: () {
+                                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                              },
+                                            ),
+                                          ),
+                                        ).closed.then((reason) {
+                                          if (reason != SnackBarClosedReason.action) {
+                                            if (ref.read(hiddenItemsProvider).contains(itemKey)) {
+                                              ref.read(databaseProvider).deleteTransaction(e.value.id);
+                                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                            }
+                                          }
+                                        });
+                                      },
                                       onEdit: () => _showAddEditSheet(context, ref, transaction: e.value),
                                     ).animate().fadeIn(delay: (50 * e.key).ms, duration: 300.ms);
                                   }),

@@ -38,6 +38,9 @@ final selectedMonthProvider = StateProvider<DateTime>((ref) => DateTime.now());
 enum TransactionTypeFilter { all, income, expense }
 final transactionTypeFilterProvider = StateProvider<TransactionTypeFilter>((ref) => TransactionTypeFilter.all);
 
+// Transaction search query
+final transactionSearchProvider = StateProvider<String>((ref) => '');
+
 // Month transactions stream
 final monthTransactionsProvider = StreamProvider<List<Transaction>>((ref) {
   final db = ref.watch(databaseProvider);
@@ -49,15 +52,25 @@ final monthTransactionsProvider = StreamProvider<List<Transaction>>((ref) {
 final filteredTransactionsProvider = Provider<AsyncValue<List<Transaction>>>((ref) {
   final txAsync = ref.watch(monthTransactionsProvider);
   final filter = ref.watch(transactionTypeFilterProvider);
+  final searchQuery = ref.watch(transactionSearchProvider).toLowerCase();
 
   return txAsync.whenData((txList) {
+    List<Transaction> result = txList;
+    if (searchQuery.isNotEmpty) {
+      result = result.where((t) => 
+        t.title.toLowerCase().contains(searchQuery) ||
+        (t.note?.toLowerCase().contains(searchQuery) ?? false) ||
+        t.category.toLowerCase().contains(searchQuery)
+      ).toList();
+    }
+
     switch (filter) {
       case TransactionTypeFilter.all:
-        return txList;
+        return result;
       case TransactionTypeFilter.income:
-        return txList.where((t) => t.type == 'income').toList();
+        return result.where((t) => t.type == 'income').toList();
       case TransactionTypeFilter.expense:
-        return txList.where((t) => t.type == 'expense').toList();
+        return result.where((t) => t.type == 'expense').toList();
     }
   });
 });

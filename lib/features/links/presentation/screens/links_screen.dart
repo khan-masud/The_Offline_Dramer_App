@@ -10,6 +10,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/providers/undo_provider.dart';
 import '../../data/links_provider.dart';
 
 class LinksScreen extends ConsumerWidget {
@@ -69,7 +70,9 @@ class LinksScreen extends ConsumerWidget {
           // Links list
           Expanded(
             child: linksAsync.when(
-              data: (links) {
+              data: (allLinks) {
+                final hidden = ref.watch(hiddenItemsProvider);
+                final links = allLinks.where((l) => !hidden.contains('link_${l.id}')).toList();
                 if (links.isEmpty) return _emptyState(context);
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -81,10 +84,34 @@ class LinksScreen extends ConsumerWidget {
                       onOpen: () => _openLink(context, links[i].url),
                       onCopy: () => _copyLink(context, links[i].url),
                       onEdit: () => _showAddEditSheet(context, ref, link: links[i]),
-                      onDelete: () => ref.read(databaseProvider).deleteLink(links[i].id),
-                      onToggleFavorite: () => ref.read(databaseProvider).toggleLinkFavorite(
-                        links[i].id, !links[i].isFavorite,
-                      ),
+                      onDelete: () {
+                        final itemKey = 'link_${links[i].id}';
+                        ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                        ScaffoldMessenger.of(context).clearSnackBars();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('Link deleted'),
+                            duration: const Duration(seconds: 4),
+                            action: SnackBarAction(
+                              label: 'UNDO',
+                              onPressed: () {
+                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                              },
+                            ),
+                          ),
+                        ).closed.then((reason) {
+                          if (reason != SnackBarClosedReason.action) {
+                            if (ref.read(hiddenItemsProvider).contains(itemKey)) {
+                              ref.read(databaseProvider).deleteLink(links[i].id);
+                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                            }
+                          }
+                        });
+                      },
+                      onToggleFavorite: () {
+                        HapticFeedback.lightImpact();
+                        ref.read(databaseProvider).toggleLinkFavorite(links[i].id, !links[i].isFavorite);
+                      },
                     ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
                   },
                 );

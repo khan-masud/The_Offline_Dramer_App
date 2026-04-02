@@ -1,4 +1,4 @@
-﻿import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
@@ -129,6 +129,41 @@ class NotificationService {
         );
       } catch (e) {
         debugPrint('Routine notification schedule error: $e');
+      }
+    }
+  }
+
+  Future<void> scheduleHabitReminder({
+    required int habitId,
+    required String title,
+    required String body,
+    required int hour,
+    required int minute,
+    ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
+  }) async {
+    if (kIsWeb || !_isInitialized) return;
+
+    for (int day = 1; day <= 7; day++) {
+      final uniqueId = int.parse('20$habitId$day');
+      tz.TZDateTime scheduledDate = _nextInstanceOfDayAt(day, hour, minute);
+
+      try {
+        await _notificationsPlugin.zonedSchedule(
+          id: uniqueId,
+          title: title,
+          body: body,
+          scheduledDate: scheduledDate,
+          notificationDetails: _buildDetails(
+            channelBaseId: 'habit_reminders',
+            channelBaseName: 'Habit Reminders',
+            channelDescription: 'Reminders for your daily habits',
+            alertMode: alertMode,
+          ),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+        );
+      } catch (e) {
+        debugPrint('Habit notification schedule error: $e');
       }
     }
   }

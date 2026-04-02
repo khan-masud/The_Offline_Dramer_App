@@ -8,7 +8,11 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/services/notification_service.dart';
+import '../../../../providers/notification_preferences_provider.dart';
+import '../../../../core/providers/undo_provider.dart';
 import '../../data/habits_provider.dart';
+import 'package:flutter/services.dart';
 
 class HabitsScreen extends ConsumerWidget {
   const HabitsScreen({super.key});
@@ -25,7 +29,9 @@ class HabitsScreen extends ConsumerWidget {
         centerTitle: false,
       ),
       body: habitsAsync.when(
-        data: (habits) {
+        data: (allHabits) {
+          final hidden = ref.watch(hiddenItemsProvider);
+          final habits = allHabits.where((h) => !hidden.contains('habit_${h.id}')).toList();
           if (habits.isEmpty) return _emptyState(context);
           return completionsAsync.when(
             data: (completions) {
@@ -95,12 +101,36 @@ class HabitsScreen extends ConsumerWidget {
                               if (isDone) {
                                 await db.unmarkHabitCompleted(habit.id);
                               } else {
+                                HapticFeedback.lightImpact();
                                 await db.markHabitCompleted(habit.id);
                               }
                               // Invalidate streak
                               ref.invalidate(habitStreakProvider(habit.id));
                             },
-                            onDelete: () => ref.read(databaseProvider).deleteHabit(habit.id),
+                            onDelete: () {
+                              final itemKey = 'habit_${habit.id}';
+                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                              ScaffoldMessenger.of(context).clearSnackBars();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Text('Habit deleted'),
+                                  duration: const Duration(seconds: 4),
+                                  action: SnackBarAction(
+                                    label: 'UNDO',
+                                    onPressed: () {
+                                      ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                    },
+                                  ),
+                                ),
+                              ).closed.then((reason) {
+                                if (reason != SnackBarClosedReason.action) {
+                                  if (ref.read(hiddenItemsProvider).contains(itemKey)) {
+                                    ref.read(databaseProvider).deleteHabit(habit.id);
+                                    ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                  }
+                                }
+                              });
+                            },
                           ).animate().fadeIn(delay: (80 * i).ms, duration: 300.ms);
                         },
                         childCount: habits.length,
@@ -295,6 +325,7 @@ class _AddHabitSheetState extends ConsumerState<_AddHabitSheet> {
   String _emoji = '🎯';
   int _targetDays = 7;
   String _color = 'primary';
+  TimeOfDay? _reminderTime;
 
   @override
   void dispose() {
@@ -305,13 +336,27 @@ class _AddHabitSheetState extends ConsumerState<_AddHabitSheet> {
   Future<void> _save() async {
     if (_titleCtrl.text.trim().isEmpty) return;
     final db = ref.read(databaseProvider);
-    await db.addHabit(HabitsCompanion(
+    final habitId = await db.addHabit(HabitsCompanion(
       title: Value(_titleCtrl.text.trim()),
       emoji: Value(_emoji),
       targetDaysPerWeek: Value(_targetDays),
       color: Value(_color),
+      reminderTime: Value(_reminderTime != null ? '${_reminderTime!.hour.toString().padLeft(2, '0')}:${_reminderTime!.minute.toString().padLeft(2, '0')}' : null),
       createdAt: Value(DateTime.now()),
     ));
+    
+    if (_reminderTime != null) {
+      final prefs = ref.read(notificationPreferencesProvider);
+      await ref.read(notificationServiceProvider).scheduleHabitReminder(
+        habitId: habitId,
+        title: 'Habit Reminder: ${_titleCtrl.text.trim()}',
+        body: 'Time to keep up your $_emoji habit stream!',
+        hour: _reminderTime!.hour,
+        minute: _reminderTime!.minute,
+        alertMode: prefs.alertMode,
+      );
+    }
+    
     if (mounted) Navigator.pop(context);
   }
 
@@ -449,7 +494,29 @@ class _AddHabitSheetState extends ConsumerState<_AddHabitSheet> {
                 style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
+            // Reminder UI
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.notifications_active_rounded, color: _getColor(_color)),
+              title: Text(
+                _reminderTime == null ? 'Set Daily Reminder (Optional)' : 'Reminder: ${_reminderTime!.format(context)}',
+                style: AppTypography.bodyMedium,
+              ),
+              trailing: _reminderTime != null
+                  ? IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () => setState(() => _reminderTime = null),
+                    )
+                  : null,
+              onTap: () async {
+                final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+                if (time != null && mounted) {
+                  setState(() => _reminderTime = time);
+                }
+              },
+            ),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(

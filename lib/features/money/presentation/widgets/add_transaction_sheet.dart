@@ -26,6 +26,9 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
   String _type = 'expense';
   String _category = 'Food';
   DateTime _date = DateTime.now();
+  bool _isRecurring = false;
+  String _recurringPattern = 'monthly';
+  final List<String> _recurringOptions = ['daily', 'weekly', 'monthly', 'yearly'];
 
   bool get isEditing => widget.transaction != null;
 
@@ -42,6 +45,8 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
     _type = widget.transaction?.type ?? 'expense';
     _category = widget.transaction?.category ?? 'Food';
     _date = widget.transaction?.date ?? DateTime.now();
+    _isRecurring = widget.transaction?.isRecurring ?? false;
+    _recurringPattern = widget.transaction?.recurringPattern ?? 'monthly';
   }
 
   @override
@@ -71,6 +76,8 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
         category: Value(_category),
         note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
         date: Value(_date),
+        isRecurring: Value(_isRecurring),
+        recurringPattern: Value(_isRecurring ? _recurringPattern : null),
         createdAt: Value(widget.transaction!.createdAt),
       ));
     } else {
@@ -81,6 +88,8 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
         category: Value(_category),
         note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
         date: Value(_date),
+        isRecurring: Value(_isRecurring),
+        recurringPattern: Value(_isRecurring ? _recurringPattern : null),
         createdAt: Value(now),
       ));
     }
@@ -285,6 +294,32 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
               ),
             ),
             const SizedBox(height: 12),
+
+            // Recurring Options
+            SwitchListTile(
+              title: Text('Make this recurring', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
+              value: _isRecurring,
+              onChanged: (v) {
+                HapticFeedback.lightImpact();
+                setState(() => _isRecurring = v);
+              },
+              activeColor: AppColors.primary,
+              contentPadding: EdgeInsets.zero,
+            ),
+            if (_isRecurring) ...[
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _recurringPattern,
+                items: _recurringOptions.map((e) => DropdownMenuItem(value: e, child: Text(e[0].toUpperCase() + e.substring(1)))).toList(),
+                onChanged: (v) { if (v != null) setState(() => _recurringPattern = v); },
+                decoration: const InputDecoration(
+                  labelText: 'Frequency',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // Note
             TextField(

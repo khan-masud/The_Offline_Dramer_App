@@ -7,6 +7,7 @@ import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/providers/undo_provider.dart';
 import '../../data/notes_provider.dart';
 import 'note_editor_screen.dart';
 
@@ -89,7 +90,9 @@ class NotesScreen extends ConsumerWidget {
           // Notes grid
           Expanded(
             child: notesAsync.when(
-              data: (notes) {
+              data: (allNotes) {
+                final hidden = ref.watch(hiddenItemsProvider);
+                final notes = allNotes.where((n) => !hidden.contains('note_${n.id}')).toList();
                 if (notes.isEmpty) return _emptyState(context);
                 return GridView.builder(
                   padding: const EdgeInsets.all(16),
@@ -113,7 +116,30 @@ class NotesScreen extends ConsumerWidget {
                         MaterialPageRoute(builder: (_) => NoteEditorScreen(note: note)),
                       ),
                       onTogglePin: () => ref.read(databaseProvider).toggleNotePin(note.id, !note.isPinned),
-                      onDelete: () => ref.read(databaseProvider).deleteNote(note.id),
+                      onDelete: () {
+                        final itemKey = 'note_${note.id}';
+                        ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                        ScaffoldMessenger.of(context).clearSnackBars();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('Note deleted'),
+                            duration: const Duration(seconds: 4),
+                            action: SnackBarAction(
+                              label: 'UNDO',
+                              onPressed: () {
+                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                              },
+                            ),
+                          ),
+                        ).closed.then((reason) {
+                          if (reason != SnackBarClosedReason.action) {
+                            if (ref.read(hiddenItemsProvider).contains(itemKey)) {
+                              ref.read(databaseProvider).deleteNote(note.id);
+                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                            }
+                          }
+                        });
+                      },
                     ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
                   },
                 );
