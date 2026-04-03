@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
@@ -9,6 +12,7 @@ import '../../../../providers/auth_provider.dart';
 import '../../../../providers/profile_provider.dart';
 import '../../../../providers/notification_preferences_provider.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/services/backup_service.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../auth/presentation/screens/pin_setup_screen.dart';
 
@@ -21,6 +25,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _isSavingProfile = false;
+  bool _isBackupBusy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -51,12 +56,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   icon: Icons.person_outline_rounded,
                   iconColor: AppColors.info,
                   title: profile.name,
-                  subtitle: profile.photoUrl.isEmpty ? 'No profile picture set' : 'Profile picture linked',
+                  subtitle: profile.hasPhoto ? 'Profile picture linked' : 'No profile picture set',
                   trailing: CircleAvatar(
                     radius: 16,
                     backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    backgroundImage: profile.photoUrl.isNotEmpty ? NetworkImage(profile.photoUrl) : null,
-                    child: profile.photoUrl.isEmpty
+                    backgroundImage: profile.imageProvider,
+                    child: !profile.hasPhoto
                         ? Text(
                             profile.name.isEmpty ? 'D' : profile.name.substring(0, 1).toUpperCase(),
                             style: AppTypography.labelMedium.copyWith(color: AppColors.primaryDark),
@@ -174,19 +179,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _SettingsTile(
                   icon: Icons.download_outlined,
                   iconColor: AppColors.success,
-                  title: 'Manual Backup',
-                  subtitle: 'Download backup file',
+                  title: _isBackupBusy ? 'Processing...' : 'Manual Backup',
+                  subtitle: 'Save full app backup file',
                   trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
-                  onTap: () {},
+                  onTap: _isBackupBusy ? null : _runManualBackup,
                 ),
                 Divider(height: 1, color: theme.colorScheme.outline),
                 _SettingsTile(
                   icon: Icons.restore_rounded,
                   iconColor: AppColors.warning,
                   title: 'Restore',
-                  subtitle: 'Restore from backup',
+                  subtitle: 'Restore entire app from backup file',
                   trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
-                  onTap: () {},
+                  onTap: _isBackupBusy ? null : _confirmRestore,
                 ),
               ],
             ),
@@ -203,7 +208,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   icon: Icons.info_outline_rounded,
                   iconColor: AppColors.teal,
                   title: 'Version',
-                  subtitle: '2.0.0',
+                  subtitle: '3.0.0',
                 ),
                 Divider(height: 1, color: theme.colorScheme.outline),
                 _SettingsTile(
@@ -224,7 +229,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _showEditProfileSheet(BuildContext context) async {
     final current = ref.read(userProfileProvider);
     final nameCtrl = TextEditingController(text: current.name);
-    final photoCtrl = TextEditingController(text: current.photoUrl);
+    XFile? pickedImage;
+    Uint8List? pickedImageBytes;
 
     await showModalBottomSheet(
       context: context,
@@ -237,7 +243,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
             final previewName = nameCtrl.text.trim().isEmpty ? 'Dreamer' : nameCtrl.text.trim();
-            final previewPhoto = photoCtrl.text.trim();
+
+            ImageProvider? avatarImage;
+            if (pickedImageBytes != null) {
+              avatarImage = MemoryImage(pickedImageBytes!);
+            } else {
+              avatarImage = current.imageProvider;
+            }
 
             return AnimatedPadding(
               duration: const Duration(milliseconds: 180),
@@ -267,15 +279,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       Text('Edit Profile', style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface)),
                       const SizedBox(height: 16),
                       Center(
-                        child: CircleAvatar(
-                          radius: 28,
-                          backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-                          backgroundImage: previewPhoto.isNotEmpty ? NetworkImage(previewPhoto) : null,
-                          child: previewPhoto.isEmpty
-                              ? Text(previewName.substring(0, 1).toUpperCase(), style: AppTypography.headingSmall.copyWith(color: AppColors.primaryDark))
-                              : null,
+                        child: Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 40,
+                              backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                              backgroundImage: avatarImage,
+                              child: avatarImage == null
+                                  ? Text(previewName.substring(0, 1).toUpperCase(), style: AppTypography.headingSmall.copyWith(color: AppColors.primaryDark))
+                                  : null,
+                            ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: GestureDetector(
+                                onTap: () async {
+                                  final cropped = await _pickAndCropImage(this.context);
+                                  if (cropped != null) {
+                                    setSheetState(() {
+                                      pickedImage = cropped.file;
+                                      pickedImageBytes = cropped.bytes;
+                                    });
+                                  }
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.camera_alt_rounded, size: 16, color: Colors.white),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      if (avatarImage != null)
+                        Center(
+                          child: TextButton(
+                            onPressed: () {
+                              setSheetState(() {
+                                pickedImage = null;
+                                pickedImageBytes = null;
+                              });
+                              if (current.hasPhoto) {
+                                ref.read(userProfileProvider.notifier).removeProfileImage();
+                              }
+                            },
+                            child: const Text('Remove Photo', style: TextStyle(color: AppColors.error)),
+                          ),
+                        ),
                       const SizedBox(height: 14),
                       TextField(
                         controller: nameCtrl,
@@ -285,25 +340,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           hintText: 'Type your name',
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: photoCtrl,
-                        onChanged: (_) => setSheetState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'Profile photo URL',
-                          hintText: 'https://...',
-                        ),
-                      ),
                       const SizedBox(height: 18),
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: () async {
                             setState(() => _isSavingProfile = true);
-                            await ref.read(userProfileProvider.notifier).saveProfile(
-                              name: nameCtrl.text,
-                              photoUrl: photoCtrl.text,
-                            );
+                            
+                            await ref.read(userProfileProvider.notifier).saveName(nameCtrl.text);
+                            if (pickedImage != null) {
+                              await ref.read(userProfileProvider.notifier).saveProfileImage(
+                                pickedImage!,
+                                imageBytes: pickedImageBytes,
+                              );
+                            }
+                            
                             if (!mounted) return;
                             setState(() => _isSavingProfile = false);
                             if (ctx.mounted) Navigator.pop(ctx);
@@ -323,6 +374,84 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         );
       },
     );
+  }
+
+  Future<({XFile file, Uint8List bytes})?> _pickAndCropImage(BuildContext context) async {
+    final picker = ImagePicker();
+    final photo = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 92,
+    );
+    if (photo == null) return null;
+    final originalBytes = await photo.readAsBytes();
+
+    if (!context.mounted) {
+      return (file: photo, bytes: originalBytes);
+    }
+
+    final cropStyle = await showDialog<CropStyle>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Choose crop style'),
+        contentPadding: EdgeInsets.zero,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.circle_outlined),
+              title: const Text('Circle crop'),
+              onTap: () => Navigator.of(ctx).pop(CropStyle.circle),
+            ),
+            ListTile(
+              leading: const Icon(Icons.crop_square_rounded),
+              title: const Text('Square crop'),
+              onTap: () => Navigator.of(ctx).pop(CropStyle.rectangle),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (cropStyle == null) return (file: photo, bytes: originalBytes);
+
+    // image_cropper web integration requires dedicated web ui settings.
+    // To keep this flow reliable on web, use selected image directly.
+    if (kIsWeb) {
+      return (file: photo, bytes: originalBytes);
+    }
+
+    try {
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: photo.path,
+        compressQuality: 92,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Profile Photo',
+            hideBottomControls: true,
+            lockAspectRatio: true,
+            cropStyle: cropStyle,
+          ),
+          IOSUiSettings(
+            title: 'Crop Profile Photo',
+            aspectRatioLockEnabled: true,
+            cropStyle: cropStyle,
+          ),
+        ],
+      );
+
+      // If crop UI is canceled/failed, keep original selection so avatar still updates.
+      if (cropped == null) return (file: photo, bytes: originalBytes);
+
+      final croppedBytes = await cropped.readAsBytes();
+      return (
+        file: XFile(cropped.path),
+        bytes: croppedBytes,
+      );
+    } catch (e) {
+      debugPrint('Profile crop failed: $e');
+      return (file: photo, bytes: originalBytes);
+    }
   }
 
   void _showRemovePinDialog(BuildContext context, WidgetRef ref) {
@@ -421,6 +550,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final notification = ref.read(notificationServiceProvider);
     final prefs = ref.read(notificationPreferencesProvider);
     final routines = await db.getAllRoutines();
+    final birthdays = await db.getAllBirthdays();
+
+    await notification.scheduleGlobalDailyReminder(
+      time: prefs.routineReminderTime,
+      alertMode: prefs.alertMode,
+    );
 
     for (final routine in routines) {
       await notification.cancelRoutineReminders(routine.id);
@@ -431,15 +566,115 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           .toList();
       if (days.isEmpty) continue;
 
-      await notification.scheduleRoutineReminder(
+      final reminderTimes = <TimeOfDay>[];
+      if (routine.reminderTime != null && routine.reminderTime!.trim().isNotEmpty) {
+        for (final token in routine.reminderTime!.split(',')) {
+          final parts = token.trim().split(':');
+          if (parts.length != 2) continue;
+          final hour = int.tryParse(parts[0]);
+          final minute = int.tryParse(parts[1]);
+          if (hour == null || minute == null) continue;
+          if (hour < 0 || hour > 23 || minute < 0 || minute > 59) continue;
+          reminderTimes.add(TimeOfDay(hour: hour, minute: minute));
+        }
+      }
+
+      if (reminderTimes.isEmpty) {
+        reminderTimes.add(prefs.routineReminderTime);
+      }
+
+      await notification.scheduleRoutineReminders(
         routineId: routine.id,
         title: 'Routine: ${routine.title}',
         body: 'Time to start your morning routine!',
         daysOfWeek: days,
-        hour: prefs.routineReminderTime.hour,
-        minute: prefs.routineReminderTime.minute,
+        reminderTimes: reminderTimes,
         alertMode: prefs.alertMode,
       );
+    }
+
+    await notification.rescheduleAllBirthdayReminders(
+      birthdays: birthdays,
+      alertMode: prefs.alertMode,
+    );
+  }
+
+  Future<void> _runManualBackup() async {
+    if (_isBackupBusy) return;
+    setState(() => _isBackupBusy = true);
+    try {
+      final backupService = AppBackupService(ref.read(databaseProvider));
+      final result = await backupService.createBackupFile();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isBackupBusy = false);
+      }
+    }
+  }
+
+  Future<void> _confirmRestore() async {
+    final shouldRestore = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restore Backup?'),
+        content: const Text(
+          'This will replace your current app data, settings, and PIN with backup content. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Restore', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldRestore != true) return;
+    await _runRestoreBackup();
+  }
+
+  Future<void> _runRestoreBackup() async {
+    if (_isBackupBusy) return;
+    setState(() => _isBackupBusy = true);
+    try {
+      final backupService = AppBackupService(ref.read(databaseProvider));
+      final result = await backupService.restoreFromFile();
+
+      if (result.success) {
+        ref.invalidate(databaseProvider);
+        ref.invalidate(userProfileProvider);
+        ref.invalidate(themeModeProvider);
+        ref.invalidate(notificationPreferencesProvider);
+        ref.invalidate(authProvider);
+
+        await _waitForNotificationPrefsReady();
+        await _rescheduleRoutineReminders();
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isBackupBusy = false);
+      }
+    }
+  }
+
+  Future<void> _waitForNotificationPrefsReady() async {
+    for (int i = 0; i < 30; i++) {
+      final state = ref.read(notificationPreferencesProvider);
+      if (!state.isLoading) return;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
 }

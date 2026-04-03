@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,11 +13,31 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../providers/notification_preferences_provider.dart';
 import '../../../../core/providers/undo_provider.dart';
+import '../../../../core/providers/activity_log_provider.dart';
 import '../../data/routine_provider.dart';
 import 'routine_timer_dialog.dart';
 
 class RoutineScreen extends ConsumerWidget {
   const RoutineScreen({super.key});
+
+  List<Routine> _sortAndFilterRoutinesByPriority(
+    List<Routine> routines,
+    RoutinePriorityFilter filter,
+  ) {
+    final sorted = [...routines]
+      ..sort((a, b) {
+        final pr = b.priority.compareTo(a.priority);
+        if (pr != 0) return pr;
+        return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      });
+
+    return switch (filter) {
+      RoutinePriorityFilter.all => sorted,
+      RoutinePriorityFilter.high => sorted.where((r) => r.priority == 3).toList(),
+      RoutinePriorityFilter.medium => sorted.where((r) => r.priority == 2).toList(),
+      RoutinePriorityFilter.low => sorted.where((r) => r.priority == 1).toList(),
+    };
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -86,14 +107,22 @@ class RoutineScreen extends ConsumerWidget {
             Expanded(
               child: todayRoutinesAsync.when(
                 data: (routines) {
-                  if (routines.isEmpty) return _emptyState(context, ref);
+                  final displayRoutines = _sortAndFilterRoutinesByPriority(routines, priorityFilter);
+                  if (displayRoutines.isEmpty) {
+                    final label = switch (priorityFilter) {
+                      RoutinePriorityFilter.all => 'today',
+                      RoutinePriorityFilter.high => 'high priority',
+                      RoutinePriorityFilter.medium => 'medium priority',
+                      RoutinePriorityFilter.low => 'low priority',
+                    };
+                    return _emptyState(context, ref, message: 'No $label routines');
+                  }
                   return ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     physics: const BouncingScrollPhysics(),
-                    itemCount: routines.length,
+                    itemCount: displayRoutines.length,
                     itemBuilder: (ctx, i) => _RoutineSection(
-                      routine: routines[i],
-                      filter: priorityFilter,
+                      routine: displayRoutines[i],
                     )
                         .animate().fadeIn(delay: (100 * i).ms, duration: 400.ms),
                   );
@@ -114,7 +143,7 @@ class RoutineScreen extends ConsumerWidget {
     );
   }
 
-  Widget _emptyState(BuildContext context, WidgetRef ref) {
+  Widget _emptyState(BuildContext context, WidgetRef ref, {String message = 'No routines for today'}) {
     final theme = Theme.of(context);
     return Center(
       child: Column(
@@ -126,7 +155,7 @@ class RoutineScreen extends ConsumerWidget {
             child: const Icon(Icons.loop_rounded, size: 48, color: AppColors.success),
           ),
           const SizedBox(height: 20),
-          Text('No routines for today', style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurface)),
+          Text(message, style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurface)),
           const SizedBox(height: 8),
           Text('Tap + to create a routine', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ],
@@ -160,7 +189,8 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
   final _descCtrl = TextEditingController();
   final Set<int> _selectedDays = {DateTime.now().weekday};
   final List<Map<String, dynamic>> _items = [];
-  TimeOfDay? _reminderTime;
+  final List<TimeOfDay> _reminderTimes = [];
+  int _routinePriority = 2;
 
   @override
   void dispose() {
@@ -248,8 +278,15 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
         RoutinesCompanion(
           title: Value(title),
           description: Value(_descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim()),
+          priority: Value(_routinePriority),
           days: Value(([..._selectedDays]..sort()).join(',')),
-          reminderTime: Value(_reminderTime != null ? '${_reminderTime!.hour.toString().padLeft(2, '0')}:${_reminderTime!.minute.toString().padLeft(2, '0')}' : null),
+          reminderTime: Value(
+            _reminderTimes.isEmpty
+                ? null
+                : _reminderTimes
+                    .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+                    .join(','),
+          ),
           createdAt: Value(DateTime.now()),
         ),
       );
@@ -283,15 +320,22 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
       }
 
       final prefs = ref.read(notificationPreferencesProvider);
-      await ref.read(notificationServiceProvider).scheduleRoutineReminder(
-            routineId: routineId,
-            title: 'Routine: $title',
-            body: 'Time to start your morning routine!',
-            daysOfWeek: _selectedDays.toList(),
-            hour: _reminderTime?.hour ?? prefs.routineReminderTime.hour,
-            minute: _reminderTime?.minute ?? prefs.routineReminderTime.minute,
-            alertMode: prefs.alertMode,
-          );
+      final times =
+          _reminderTimes.isEmpty ? <TimeOfDay>[prefs.routineReminderTime] : _reminderTimes;
+      await ref.read(notificationServiceProvider).scheduleRoutineReminders(
+        routineId: routineId,
+        title: 'Routine: $title',
+        body: 'Time to start your routine!',
+        daysOfWeek: _selectedDays.toList(),
+        reminderTimes: times,
+        alertMode: prefs.alertMode,
+      );
+
+      ref.read(activityLogProvider.notifier).log(
+        type: 'add',
+        entityType: 'routine',
+        entityTitle: title,
+      );
 
       if (!mounted) return;
       Navigator.pop(context);
@@ -382,26 +426,83 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
               }).toList(),
             ),
             const SizedBox(height: 16),
+            Text('Routine Priority', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _PriorityChip(
+                  label: 'Low',
+                  color: AppColors.info,
+                  isActive: _routinePriority == 1,
+                  onTap: () => setState(() => _routinePriority = 1),
+                ),
+                const SizedBox(width: 8),
+                _PriorityChip(
+                  label: 'Medium',
+                  color: AppColors.warning,
+                  isActive: _routinePriority == 2,
+                  onTap: () => setState(() => _routinePriority = 2),
+                ),
+                const SizedBox(width: 8),
+                _PriorityChip(
+                  label: 'High',
+                  color: AppColors.error,
+                  isActive: _routinePriority == 3,
+                  onTap: () => setState(() => _routinePriority = 3),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.notifications_active_rounded, color: AppColors.warning),
               title: Text(
-                _reminderTime == null ? 'Routine Reminder Time (Optional)' : 'Reminder: ${_reminderTime!.format(context)}',
+                _reminderTimes.isEmpty
+                    ? 'Reminder Times (Optional)'
+                    : 'Reminders: ${_reminderTimes.map((t) => t.format(context)).join(', ')}',
                 style: AppTypography.bodyMedium,
               ),
-              trailing: _reminderTime != null
-                  ? IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      onPressed: () => setState(() => _reminderTime = null),
-                    )
-                  : null,
+              trailing: IconButton(
+                icon: const Icon(Icons.add_alarm_rounded, size: 20),
+                onPressed: () async {
+                  final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+                  if (time != null && mounted) {
+                    setState(() {
+                      final already = _reminderTimes.any((t) => t.hour == time.hour && t.minute == time.minute);
+                      if (!already) {
+                        _reminderTimes.add(time);
+                        _reminderTimes.sort((a, b) => (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute));
+                      }
+                    });
+                  }
+                },
+              ),
               onTap: () async {
                 final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
                 if (time != null && mounted) {
-                  setState(() => _reminderTime = time);
+                  setState(() {
+                    final already = _reminderTimes.any((t) => t.hour == time.hour && t.minute == time.minute);
+                    if (!already) {
+                      _reminderTimes.add(time);
+                      _reminderTimes.sort((a, b) => (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute));
+                    }
+                  });
                 }
               },
             ),
+            if (_reminderTimes.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _reminderTimes.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final time = entry.value;
+                  return Chip(
+                    label: Text(time.format(context)),
+                    onDeleted: () => setState(() => _reminderTimes.removeAt(index)),
+                  );
+                }).toList(),
+              ),
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -550,14 +651,25 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
 // ==================== ROUTINE SECTION ====================
 class _RoutineSection extends ConsumerWidget {
   final Routine routine;
-  final RoutinePriorityFilter filter;
-  const _RoutineSection({required this.routine, required this.filter});
+  const _RoutineSection({required this.routine});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final itemsAsync = ref.watch(routineItemsProvider(routine.id));
     final completionsAsync = ref.watch(todayCompletionsProvider);
+    final priorityLabel = switch (routine.priority) {
+      3 => 'High',
+      2 => 'Medium',
+      1 => 'Low',
+      _ => null,
+    };
+    final priorityColor = switch (routine.priority) {
+      3 => AppColors.error,
+      2 => AppColors.warning,
+      1 => AppColors.info,
+      _ => theme.colorScheme.onSurfaceVariant,
+    };
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
@@ -605,6 +717,10 @@ class _RoutineSection extends ConsumerWidget {
                     ],
                   ),
                 ),
+                if (priorityLabel != null) ...[
+                  _PriorityBadgeSmall(label: priorityLabel, color: priorityColor),
+                  const SizedBox(width: 6),
+                ],
                 // Add item button
                 IconButton(
                   icon: const Icon(Icons.add_rounded, size: 20),
@@ -615,32 +731,19 @@ class _RoutineSection extends ConsumerWidget {
             ),
             itemsAsync.when(
               data: (items) {
-                final filteredItems = switch (filter) {
-                  RoutinePriorityFilter.all => items,
-                  RoutinePriorityFilter.high => items.where((i) => i.priority == 3).toList(),
-                  RoutinePriorityFilter.medium => items.where((i) => i.priority == 2).toList(),
-                  RoutinePriorityFilter.low => items.where((i) => i.priority == 1).toList(),
-                };
-
-                if (filteredItems.isEmpty) {
-                  final emptyText = switch (filter) {
-                    RoutinePriorityFilter.all => 'No items yet. Tap + to add.',
-                    RoutinePriorityFilter.high => 'No high priority items.',
-                    RoutinePriorityFilter.medium => 'No medium priority items.',
-                    RoutinePriorityFilter.low => 'No low priority items.',
-                  };
+                if (items.isEmpty) {
                   return Padding(
                     padding: const EdgeInsets.only(top: 12),
-                    child: Text(emptyText, style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                    child: Text('No items yet. Tap + to add.', style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                   );
                 }
 
                 return completionsAsync.when(
                   data: (completions) {
                     final hidden = ref.watch(hiddenItemsProvider);
-                    final items = filteredItems.where((i) => !hidden.contains('routine_item_${i.id}')).toList();
+                    final visibleItems = items.where((i) => !hidden.contains('routine_item_${i.id}')).toList();
                     final completedIds = completions.map((c) => c.routineItemId).toSet();
-                    final completed = items.where((i) => completedIds.contains(i.id)).length;
+                    final completed = visibleItems.where((i) => completedIds.contains(i.id)).length;
 
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -650,7 +753,7 @@ class _RoutineSection extends ConsumerWidget {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(4),
                           child: LinearProgressIndicator(
-                            value: items.isEmpty ? 0 : completed / items.length,
+                            value: visibleItems.isEmpty ? 0 : completed / visibleItems.length,
                             backgroundColor: theme.colorScheme.outline,
                             color: AppColors.success,
                             minHeight: 6,
@@ -658,10 +761,10 @@ class _RoutineSection extends ConsumerWidget {
                         ),
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text('$completed/${items.length} completed', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                          child: Text('$completed/${visibleItems.length} completed', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                         ),
                         const SizedBox(height: 4),
-                        ...items.map((item) {
+                        ...visibleItems.map((item) {
                           final isDone = completedIds.contains(item.id);
                           return Dismissible(
                             key: ValueKey('dismiss_routine_item_${item.id}'),
@@ -677,28 +780,50 @@ class _RoutineSection extends ConsumerWidget {
                             ),
                             onDismissed: (_) {
                               final itemKey = 'routine_item_${item.id}';
-                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                              final db = ref.read(databaseProvider);
+                              final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
+                              final messenger = ScaffoldMessenger.of(context);
                               
-                              ScaffoldMessenger.of(context).clearSnackBars();
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              hiddenNotifier.update((state) => {...state, itemKey});
+                              messenger.clearSnackBars();
+                              
+                              bool undone = false;
+                              final timer = Timer(const Duration(seconds: 3), () async {
+                                if (!undone) {
+                                  await db.deleteRoutineItem(item.id);
+                                  hiddenNotifier.update((state) {
+                                    final s = {...state};
+                                    s.remove(itemKey);
+                                    return s;
+                                  });
+                                  ref.read(activityLogProvider.notifier).log(
+                                    type: 'delete',
+                                    entityType: 'routine',
+                                    entityTitle: 'Task: ${item.title}',
+                                  );
+                                }
+                                messenger.hideCurrentSnackBar();
+                              });
+                              
+                              messenger.showSnackBar(
                                 SnackBar(
                                   content: Text('Task "${item.title}" removed from routine'),
-                                  duration: const Duration(seconds: 4),
+                                  duration: const Duration(seconds: 3),
                                   action: SnackBarAction(
                                     label: 'UNDO',
                                     onPressed: () {
-                                      ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                      undone = true;
+                                      timer.cancel();
+                                      messenger.hideCurrentSnackBar();
+                                      hiddenNotifier.update((state) {
+                                        final s = {...state};
+                                        s.remove(itemKey);
+                                        return s;
+                                      });
                                     },
                                   ),
                                 ),
-                              ).closed.then((reason) {
-                                if (reason != SnackBarClosedReason.action) {
-                                  if (ref.read(hiddenItemsProvider).contains(itemKey)) {
-                                    ref.read(databaseProvider).deleteRoutineItem(item.id);
-                                    ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                                  }
-                                }
-                              });
+                              );
                             },
                             child: _RoutineItemTile(
                               item: item,
@@ -712,6 +837,11 @@ class _RoutineSection extends ConsumerWidget {
                                   HapticFeedback.lightImpact();
                                   await db.markRoutineItemCompleted(item.id);
                                 }
+                                ref.read(activityLogProvider.notifier).log(
+                                  type: 'update',
+                                  entityType: 'routine',
+                                  entityTitle: 'Task: ${item.title}',
+                                );
                               },
                             ),
                           );
@@ -796,6 +926,12 @@ class _RoutineItemTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final priorityColor = item.priority == 1 ? Colors.green : item.priority == 2 ? Colors.orange : item.priority == 3 ? Colors.red : Colors.transparent;
+    final priorityLabel = switch (item.priority) {
+      1 => 'Low',
+      2 => 'Medium',
+      3 => 'High',
+      _ => null,
+    };
     final subTasksAsync = ref.watch(routineSubTasksProvider(item.id));
     final subTasks = subTasksAsync.valueOrNull ?? [];
     final doneSubTasks = subTasks.where((st) => st.isCompleted).length;
@@ -840,21 +976,17 @@ class _RoutineItemTile extends ConsumerWidget {
                           decoration: isDone ? TextDecoration.lineThrough : null,
                         ),
                       ),
-                      if (item.priority > 0 && !isDone)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.flag_rounded, size: 12, color: priorityColor),
-                            const SizedBox(width: 4),
-                            Text(
-                              ['Low', 'Medium', 'High'][item.priority - 1],
-                              style: AppTypography.labelSmall.copyWith(color: priorityColor),
-                            ),
-                          ],
-                        ),
                     ],
                   ),
                 ),
+                if (priorityLabel != null && !isDone) ...[
+                  _PriorityBadgeSmall(
+                    label: priorityLabel,
+                    color: priorityColor,
+                    outlined: false,
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 if (item.startTime != null)
                   Text(item.startTime!, style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
                 IconButton(
@@ -906,6 +1038,67 @@ class _RoutineItemTile extends ConsumerWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PriorityBadgeSmall extends StatelessWidget {
+  final String label;
+  final Color color;
+  final bool outlined;
+
+  const _PriorityBadgeSmall({
+    required this.label,
+    required this.color,
+    this.outlined = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final badgeContent = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.flag_rounded, size: 9, color: color),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: AppTypography.labelSmall.copyWith(
+            color: color,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            height: 1.0,
+          ),
+        ),
+      ],
+    );
+
+    if (!outlined) {
+      return badgeContent;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.flag_rounded, size: 9, color: color),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: AppTypography.labelSmall.copyWith(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              height: 1.0,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -970,6 +1163,11 @@ class _AddEditRoutineItemSheetState extends ConsumerState<_AddEditRoutineItemShe
         priority: Value(_priority),
         sortOrder: Value(0),
       ));
+      ref.read(activityLogProvider.notifier).log(
+        type: 'add',
+        entityType: 'routine',
+        entityTitle: 'Task: ${_titleController.text.trim()}',
+      );
     } else {
       itemId = widget.item!.id;
       await db.updateRoutineItem(RoutineItemsCompanion(
@@ -978,6 +1176,11 @@ class _AddEditRoutineItemSheetState extends ConsumerState<_AddEditRoutineItemShe
         title: Value(_titleController.text.trim()),
         priority: Value(_priority),
       ));
+      ref.read(activityLogProvider.notifier).log(
+        type: 'update',
+        entityType: 'routine',
+        entityTitle: 'Task: ${_titleController.text.trim()}',
+      );
 
       final existing = await db.watchRoutineSubTasks(itemId).first;
       for (final st in existing) {
@@ -1280,29 +1483,52 @@ class _ManageRoutinesScreen extends ConsumerWidget {
                       icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
                       onPressed: () {
                         final itemKey = 'routine_${r.id}';
-                        ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
+                        final db = ref.read(databaseProvider);
+                        final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
+                        final notif = ref.read(notificationServiceProvider);
+                        final messenger = ScaffoldMessenger.of(context);
                         
-                        ScaffoldMessenger.of(context).clearSnackBars();
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        hiddenNotifier.update((state) => {...state, itemKey});
+                        messenger.clearSnackBars();
+                        
+                        bool undone = false;
+                        final timer = Timer(const Duration(seconds: 3), () async {
+                          if (!undone) {
+                            await notif.cancelRoutineReminders(r.id);
+                            await db.deleteRoutine(r.id);
+                            hiddenNotifier.update((state) {
+                              final s = {...state};
+                              s.remove(itemKey);
+                              return s;
+                            });
+                            ref.read(activityLogProvider.notifier).log(
+                              type: 'delete',
+                              entityType: 'routine',
+                              entityTitle: r.title,
+                            );
+                          }
+                          messenger.hideCurrentSnackBar();
+                        });
+                        
+                        messenger.showSnackBar(
                           SnackBar(
                             content: Text('Routine "${r.title}" deleted'),
-                            duration: const Duration(seconds: 4),
+                            duration: const Duration(seconds: 3),
                             action: SnackBarAction(
                               label: 'UNDO',
                               onPressed: () {
-                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                undone = true;
+                                timer.cancel();
+                                messenger.hideCurrentSnackBar();
+                                hiddenNotifier.update((state) {
+                                  final s = {...state};
+                                  s.remove(itemKey);
+                                  return s;
+                                });
                               },
                             ),
                           ),
-                        ).closed.then((reason) {
-                          if (reason != SnackBarClosedReason.action) {
-                            if (ref.read(hiddenItemsProvider).contains(itemKey)) {
-                              ref.read(notificationServiceProvider).cancelRoutineReminders(r.id);
-                              ref.read(databaseProvider).deleteRoutine(r.id);
-                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                            }
-                          }
-                        });
+                        );
                       },
                     ),
                   ],
@@ -1318,146 +1544,551 @@ class _ManageRoutinesScreen extends ConsumerWidget {
   }
 
   void _showEditRoutineSheet(BuildContext context, WidgetRef ref, Routine routine) {
-    final titleCtrl = TextEditingController(text: routine.title);
-    final descCtrl = TextEditingController(text: routine.description ?? '');
-    final selectedDays = routine.days
-        .split(',')
-        .map((d) => int.tryParse(d))
-        .whereType<int>()
-        .toSet();
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheetState) {
-          final theme = Theme.of(ctx);
-          final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
-
-          return Container(
-            padding: EdgeInsets.fromLTRB(20, 20, 20, bottomInset + 20),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: theme.colorScheme.outline,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Text('Edit Routine', style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface)),
-                  const SizedBox(height: 16),
-                  TextField(controller: titleCtrl, decoration: const InputDecoration(hintText: 'Routine name...')),
-                  const SizedBox(height: 12),
-                  TextField(controller: descCtrl, decoration: const InputDecoration(hintText: 'Description (optional)...')),
-                  const SizedBox(height: 16),
-                  Text('Repeat on', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].asMap().entries.map((e) {
-                      final day = e.key + 1;
-                      final isSelected = selectedDays.contains(day);
-                      return GestureDetector(
-                        onTap: () => setSheetState(() {
-                          isSelected ? selectedDays.remove(day) : selectedDays.add(day);
-                        }),
-                        child: Container(
-                          width: 38,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: isSelected ? AppColors.primary : Colors.transparent,
-                            border: Border.all(color: isSelected ? AppColors.primary : theme.colorScheme.outline),
-                          ),
-                          child: Center(
-                            child: Text(
-                              e.value,
-                              style: AppTypography.labelMedium.copyWith(
-                                color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final title = titleCtrl.text.trim();
-                        if (title.isEmpty) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(content: Text('Routine name is required')),
-                          );
-                          return;
-                        }
-                        if (selectedDays.isEmpty) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(content: Text('Select at least one day')),
-                          );
-                          return;
-                        }
-
-                        final db = ref.read(databaseProvider);
-                        await db.updateRoutine(
-                          RoutinesCompanion(
-                            id: Value(routine.id),
-                            title: Value(title),
-                            description: Value(descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim()),
-                            days: Value(([...selectedDays]..sort()).join(',')),
-                            createdAt: Value(routine.createdAt),
-                          ),
-                        );
-
-                        final notif = ref.read(notificationServiceProvider);
-                        final prefs = ref.read(notificationPreferencesProvider);
-                        await notif.cancelRoutineReminders(routine.id);
-                        await notif.scheduleRoutineReminder(
-                          routineId: routine.id,
-                          title: 'Routine: $title',
-                          body: 'Time to start your morning routine!',
-                          daysOfWeek: selectedDays.toList(),
-                          hour: prefs.routineReminderTime.hour,
-                          minute: prefs.routineReminderTime.minute,
-                          alertMode: prefs.alertMode,
-                        );
-
-                        if (ctx.mounted) {
-                          Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Routine updated')),
-                          );
-                        }
-                      },
-                      child: Text('Save Changes', style: AppTypography.labelLarge.copyWith(color: Colors.white)),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+      builder: (_) => _EditRoutineSheet(routine: routine),
     );
   }
 
   String _formatDays(String days) {
     const names = {1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'};
     return days.split(',').map((d) => names[int.tryParse(d)] ?? d).join(', ');
+  }
+}
+
+class _EditRoutineSheet extends ConsumerStatefulWidget {
+  final Routine routine;
+
+  const _EditRoutineSheet({required this.routine});
+
+  @override
+  ConsumerState<_EditRoutineSheet> createState() => _EditRoutineSheetState();
+}
+
+class _EditRoutineSheetState extends ConsumerState<_EditRoutineSheet> {
+  late final TextEditingController _titleCtrl;
+  late final TextEditingController _descCtrl;
+  late final Set<int> _selectedDays;
+  final List<TimeOfDay> _reminderTimes = [];
+  final List<Map<String, Object?>> _items = [];
+  final Set<int> _originalItemIds = {};
+  int _routinePriority = 2;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _titleCtrl = TextEditingController(text: widget.routine.title);
+    _descCtrl = TextEditingController(text: widget.routine.description ?? '');
+    _selectedDays = widget.routine.days
+        .split(',')
+        .map((d) => int.tryParse(d))
+        .whereType<int>()
+        .toSet();
+    _routinePriority = widget.routine.priority;
+    _parseReminderTimes(widget.routine.reminderTime);
+    _loadItems();
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  void _parseReminderTimes(String? serialized) {
+    _reminderTimes.clear();
+    if (serialized == null || serialized.trim().isEmpty) return;
+    for (final token in serialized.split(',')) {
+      final parts = token.trim().split(':');
+      if (parts.length != 2) continue;
+      final hour = int.tryParse(parts[0]);
+      final minute = int.tryParse(parts[1]);
+      if (hour == null || minute == null) continue;
+      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) continue;
+      _reminderTimes.add(TimeOfDay(hour: hour, minute: minute));
+    }
+    _reminderTimes.sort((a, b) => (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute));
+  }
+
+  Future<void> _loadItems() async {
+    final db = ref.read(databaseProvider);
+    final items = await db.watchRoutineItems(widget.routine.id).first;
+    final loaded = <Map<String, Object?>>[];
+
+    for (final item in items) {
+      _originalItemIds.add(item.id);
+      final subTasks = await db.watchRoutineSubTasks(item.id).first;
+      final normalizedSubTasks = subTasks
+          .map<Map<String, Object?>>(
+            (st) => Map<String, Object?>.from({
+              'id': st.id,
+              'title': st.title,
+              'isCompleted': st.isCompleted,
+            }),
+          )
+          .toList(growable: true);
+      loaded.add(
+        Map<String, Object?>.from({
+          'id': item.id,
+          'tempKey': 'item_${item.id}',
+          'title': item.title,
+          'priority': item.priority,
+          'subTasks': normalizedSubTasks,
+        }),
+      );
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _items
+        ..clear()
+        ..addAll(loaded);
+    });
+  }
+
+  void _addTask() {
+    setState(() {
+      _items.add(
+        Map<String, Object?>.from({
+          'tempKey': 'tmp_${DateTime.now().microsecondsSinceEpoch}',
+          'title': '',
+          'priority': 2,
+          'subTasks': <Map<String, Object?>>[],
+        }),
+      );
+    });
+  }
+
+  void _removeTask(int index) {
+    setState(() {
+      _items.removeAt(index);
+    });
+  }
+
+  void _reorderTasks(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex -= 1;
+      final item = _items.removeAt(oldIndex);
+      _items.insert(newIndex, item);
+    });
+  }
+
+  void _addSubTask(int taskIndex) {
+    setState(() {
+      (_items[taskIndex]['subTasks'] as List<Map<String, Object?>>).add(
+        Map<String, Object?>.from({
+          'title': '',
+          'isCompleted': false,
+        }),
+      );
+    });
+  }
+
+  void _removeSubTask(int taskIndex, int subIndex) {
+    setState(() {
+      (_items[taskIndex]['subTasks'] as List<Map<String, Object?>>).removeAt(subIndex);
+    });
+  }
+
+  Future<void> _save() async {
+    if (_isSaving) return;
+    final title = _titleCtrl.text.trim();
+    if (title.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Routine name is required')),
+      );
+      return;
+    }
+    if (_selectedDays.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select at least one day')),
+      );
+      return;
+    }
+
+    final db = ref.read(databaseProvider);
+    final notif = ref.read(notificationServiceProvider);
+    final prefs = ref.read(notificationPreferencesProvider);
+
+    setState(() => _isSaving = true);
+
+    try {
+      await db.updateRoutine(
+        RoutinesCompanion(
+          id: Value(widget.routine.id),
+          title: Value(title),
+          description: Value(_descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim()),
+          priority: Value(_routinePriority),
+          days: Value(([..._selectedDays]..sort()).join(',')),
+          reminderTime: Value(
+            _reminderTimes.isEmpty
+                ? null
+                : _reminderTimes
+                    .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+                    .join(','),
+          ),
+          createdAt: Value(widget.routine.createdAt),
+        ),
+      );
+
+      final keptItemIds = <int>{};
+      final validItems = _items
+          .where((item) => (item['title'] as String? ?? '').trim().isNotEmpty)
+          .toList();
+
+      for (int i = 0; i < validItems.length; i++) {
+        final item = validItems[i];
+        final itemTitle = (item['title'] as String).trim();
+        final itemPriority = item['priority'] as int? ?? 2;
+        int itemId;
+
+        if (item['id'] is int) {
+          itemId = item['id'] as int;
+          await db.updateRoutineItem(
+            RoutineItemsCompanion(
+              id: Value(itemId),
+              routineId: Value(widget.routine.id),
+              title: Value(itemTitle),
+              priority: Value(itemPriority),
+              sortOrder: Value(i),
+            ),
+          );
+        } else {
+          itemId = await db.addRoutineItem(
+            RoutineItemsCompanion(
+              routineId: Value(widget.routine.id),
+              title: Value(itemTitle),
+              priority: Value(itemPriority),
+              sortOrder: Value(i),
+            ),
+          );
+        }
+        keptItemIds.add(itemId);
+
+        final existingSub = await db.watchRoutineSubTasks(itemId).first;
+        for (final st in existingSub) {
+          await db.deleteRoutineSubTask(st.id);
+        }
+
+        final subTasks = item['subTasks'] as List<Map<String, Object?>>;
+        for (int s = 0; s < subTasks.length; s++) {
+          final subTitle = (subTasks[s]['title'] as String? ?? '').trim();
+          if (subTitle.isEmpty) continue;
+          await db.addRoutineSubTask(
+            RoutineSubTasksCompanion(
+              routineItemId: Value(itemId),
+              title: Value(subTitle),
+              isCompleted: Value(false),
+              sortOrder: Value(s),
+              createdAt: Value(DateTime.now()),
+            ),
+          );
+        }
+      }
+
+      final removed = _originalItemIds.difference(keptItemIds);
+      for (final id in removed) {
+        await db.deleteRoutineItem(id);
+      }
+
+      await notif.cancelRoutineReminders(widget.routine.id);
+      final times = _reminderTimes.isEmpty ? <TimeOfDay>[prefs.routineReminderTime] : _reminderTimes;
+      await notif.scheduleRoutineReminders(
+        routineId: widget.routine.id,
+        title: 'Routine: $title',
+        body: 'Time to start your routine!',
+        daysOfWeek: _selectedDays.toList(),
+        reminderTimes: times,
+        alertMode: prefs.alertMode,
+      );
+
+      ref.read(activityLogProvider.notifier).log(
+        type: 'update',
+        entityType: 'routine',
+        entityTitle: title,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Routine updated')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, bottomInset + 20),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.outline,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('Edit Routine', style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface)),
+            const SizedBox(height: 12),
+            TextField(controller: _titleCtrl, decoration: const InputDecoration(hintText: 'Routine name...')),
+            const SizedBox(height: 10),
+            TextField(controller: _descCtrl, decoration: const InputDecoration(hintText: 'Description (optional)...')),
+            const SizedBox(height: 14),
+            Text('Routine Priority', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _PriorityChip(
+                  label: 'Low',
+                  color: AppColors.info,
+                  isActive: _routinePriority == 1,
+                  onTap: () => setState(() => _routinePriority = 1),
+                ),
+                const SizedBox(width: 8),
+                _PriorityChip(
+                  label: 'Medium',
+                  color: AppColors.warning,
+                  isActive: _routinePriority == 2,
+                  onTap: () => setState(() => _routinePriority = 2),
+                ),
+                const SizedBox(width: 8),
+                _PriorityChip(
+                  label: 'High',
+                  color: AppColors.error,
+                  isActive: _routinePriority == 3,
+                  onTap: () => setState(() => _routinePriority = 3),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Text('Repeat on', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].asMap().entries.map((entry) {
+                final day = entry.key + 1;
+                final isSelected = _selectedDays.contains(day);
+                return GestureDetector(
+                  onTap: () => setState(() {
+                    isSelected ? _selectedDays.remove(day) : _selectedDays.add(day);
+                  }),
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isSelected ? AppColors.primary : Colors.transparent,
+                      border: Border.all(color: isSelected ? AppColors.primary : theme.colorScheme.outline),
+                    ),
+                    child: Center(
+                      child: Text(
+                        entry.value,
+                        style: AppTypography.labelMedium.copyWith(
+                          color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 14),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.notifications_active_rounded, color: AppColors.warning),
+              title: Text(
+                _reminderTimes.isEmpty
+                    ? 'Reminder Times (Optional)'
+                    : 'Reminders: ${_reminderTimes.map((t) => t.format(context)).join(', ')}',
+                style: AppTypography.bodyMedium,
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.add_alarm_rounded),
+                onPressed: () async {
+                  final picked = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+                  if (picked == null || !mounted) return;
+                  setState(() {
+                    final exists = _reminderTimes.any((t) => t.hour == picked.hour && t.minute == picked.minute);
+                    if (!exists) {
+                      _reminderTimes.add(picked);
+                      _reminderTimes.sort(
+                        (a, b) => (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute),
+                      );
+                    }
+                  });
+                },
+              ),
+            ),
+            if (_reminderTimes.isNotEmpty)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _reminderTimes.asMap().entries.map((entry) {
+                  return Chip(
+                    label: Text(entry.value.format(context)),
+                    onDeleted: () => setState(() => _reminderTimes.removeAt(entry.key)),
+                  );
+                }).toList(),
+              ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Routine Tasks', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
+                TextButton.icon(
+                  onPressed: _addTask,
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: const Text('Add Task'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              onReorder: _reorderTasks,
+              itemCount: _items.length,
+              itemBuilder: (context, index) {
+                final item = _items[index];
+                final subTasks = item['subTasks'] as List<Map<String, Object?>>;
+
+                return Container(
+                  key: ValueKey(item['tempKey'] ?? 'task_$index'),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.28),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.drag_indicator_rounded),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextFormField(
+                              initialValue: item['title'] as String? ?? '',
+                              onChanged: (v) => item['title'] = v,
+                              decoration: const InputDecoration(
+                                hintText: 'Task title...',
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+                            onPressed: () => _removeTask(index),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          _PriorityChip(
+                            label: 'Low',
+                            color: AppColors.info,
+                            isActive: (item['priority'] as int? ?? 2) == 1,
+                            onTap: () => setState(() => item['priority'] = 1),
+                          ),
+                          const SizedBox(width: 8),
+                          _PriorityChip(
+                            label: 'Med',
+                            color: AppColors.warning,
+                            isActive: (item['priority'] as int? ?? 2) == 2,
+                            onTap: () => setState(() => item['priority'] = 2),
+                          ),
+                          const SizedBox(width: 8),
+                          _PriorityChip(
+                            label: 'High',
+                            color: AppColors.error,
+                            isActive: (item['priority'] as int? ?? 2) == 3,
+                            onTap: () => setState(() => item['priority'] = 3),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Subtasks', style: AppTypography.labelMedium),
+                          TextButton.icon(
+                            onPressed: () => _addSubTask(index),
+                            icon: const Icon(Icons.add_rounded, size: 16),
+                            label: const Text('Add'),
+                          ),
+                        ],
+                      ),
+                      ...List.generate(subTasks.length, (subIndex) {
+                        final sub = subTasks[subIndex];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.subdirectory_arrow_right_rounded, size: 16),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: TextFormField(
+                                  initialValue: sub['title'] as String? ?? '',
+                                  onChanged: (v) => sub['title'] = v,
+                                  decoration: const InputDecoration(
+                                    hintText: 'Subtask...',
+                                    isDense: true,
+                                    border: OutlineInputBorder(),
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded, size: 18),
+                                onPressed: () => _removeSubTask(index, subIndex),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isSaving ? null : _save,
+                child: Text(
+                  _isSaving ? 'Saving...' : 'Save Changes',
+                  style: AppTypography.labelLarge.copyWith(color: Colors.white),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

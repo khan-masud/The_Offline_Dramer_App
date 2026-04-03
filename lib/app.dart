@@ -11,6 +11,8 @@ import 'features/pomodoro/presentation/screens/pomodoro_screen.dart';
 import 'features/habits/presentation/screens/habits_screen.dart';
 import 'features/calendar/presentation/screens/calendar_screen.dart';
 import 'features/money/presentation/screens/debts_screen.dart';
+import 'features/birthday/presentation/screens/birthday_calendar_screen.dart';
+import 'features/contacts/presentation/screens/contact_list_screen.dart';
 import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
 
@@ -79,6 +81,8 @@ class _TODAppState extends ConsumerState<TODApp> {
         '/habits': (context) => const HabitsScreen(),
         '/calendar': (context) => const CalendarScreen(),
         '/debts': (context) => const DebtsScreen(),
+        '/birthdays': (context) => const BirthdayCalendarScreen(),
+        '/contacts': (context) => const ContactListScreen(),
       },
     );
   }
@@ -176,10 +180,9 @@ class _QuickSaveSheetState extends ConsumerState<_QuickSaveSheet> {
                 category: Value(_selectedFolder),
                 createdAt: Value(DateTime.now()),
               ));
-              if (mounted) {
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link saved successfully!')));
-              }
+              if (!context.mounted) return;
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Link saved successfully!')));
             },
             child: const Text('Save Link'),
           ),

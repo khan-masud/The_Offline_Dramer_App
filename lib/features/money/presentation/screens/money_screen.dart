@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -9,8 +10,10 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/providers/undo_provider.dart';
+import '../../../../core/providers/activity_log_provider.dart';
 import '../../data/money_provider.dart';
 import '../../data/recurring_transaction_service.dart';
+import 'debts_screen.dart';
 import '../widgets/add_transaction_sheet.dart';
 import '../widgets/money_chart.dart';
 
@@ -167,6 +170,14 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                           error: (_, __) => const SizedBox.shrink(),
                         ),
 
+                        const SizedBox(height: 14),
+                        _QuickActionsSection(
+                          onCalculatorTap: () => _showCalculatorDialog(context),
+                          onDebtToolsTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const DebtsScreen()),
+                          ),
+                        ).animate().fadeIn(delay: 120.ms, duration: 320.ms),
+
                         // Category breakdown chart
                         const SizedBox(height: 16),
                         const MoneyChart(),
@@ -257,27 +268,50 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                                       transaction: e.value,
                                       onDelete: () {
                                         final itemKey = 'tx_${e.value.id}';
-                                        ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
-                                        ScaffoldMessenger.of(context).clearSnackBars();
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        final db = ref.read(databaseProvider);
+                                        final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
+                                        final messenger = ScaffoldMessenger.of(context);
+                                        
+                                        hiddenNotifier.update((state) => {...state, itemKey});
+                                        messenger.clearSnackBars();
+                                        
+                                        bool undone = false;
+                                        final timer = Timer(const Duration(seconds: 3), () async {
+                                          if (!undone) {
+                                            await db.deleteTransaction(e.value.id);
+                                            hiddenNotifier.update((state) {
+                                              final s = {...state};
+                                              s.remove(itemKey);
+                                              return s;
+                                            });
+                                            ref.read(activityLogProvider.notifier).log(
+                                              type: 'delete',
+                                              entityType: 'transaction',
+                                              entityTitle: e.value.title,
+                                            );
+                                          }
+                                          messenger.hideCurrentSnackBar();
+                                        });
+                                        
+                                        messenger.showSnackBar(
                                           SnackBar(
                                             content: const Text('Transaction deleted'),
-                                            duration: const Duration(seconds: 4),
+                                            duration: const Duration(seconds: 3),
                                             action: SnackBarAction(
                                               label: 'UNDO',
                                               onPressed: () {
-                                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                                undone = true;
+                                                timer.cancel();
+                                                messenger.hideCurrentSnackBar();
+                                                hiddenNotifier.update((state) {
+                                                  final s = {...state};
+                                                  s.remove(itemKey);
+                                                  return s;
+                                                });
                                               },
                                             ),
                                           ),
-                                        ).closed.then((reason) {
-                                          if (reason != SnackBarClosedReason.action) {
-                                            if (ref.read(hiddenItemsProvider).contains(itemKey)) {
-                                              ref.read(databaseProvider).deleteTransaction(e.value.id);
-                                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                                            }
-                                          }
-                                        });
+                                        );
                                       },
                                       onEdit: () => _showAddEditSheet(context, ref, transaction: e.value),
                                     ).animate().fadeIn(delay: (50 * e.key).ms, duration: 300.ms);
@@ -402,6 +436,500 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
             child: const Text('Save'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showCalculatorDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => const _CalculatorDialog(),
+    );
+  }
+}
+
+class _QuickActionsSection extends StatelessWidget {
+  final VoidCallback onCalculatorTap;
+  final VoidCallback onDebtToolsTap;
+
+  const _QuickActionsSection({
+    required this.onCalculatorTap,
+    required this.onDebtToolsTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.bolt_rounded, size: 16, color: theme.colorScheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                'Quick Actions',
+                style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _QuickActionTile(
+                  label: 'Calculator',
+                  subtitle: 'Quick math',
+                  icon: Icons.calculate_rounded,
+                  iconColor: AppColors.primary,
+                  onTap: onCalculatorTap,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _QuickActionTile(
+                  label: 'My Debts',
+                  subtitle: 'Manage debts',
+                  icon: Icons.handshake_outlined,
+                  iconColor: AppColors.warning,
+                  onTap: onDebtToolsTap,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickActionTile extends StatelessWidget {
+  final String label;
+  final String subtitle;
+  final IconData icon;
+  final Color iconColor;
+  final VoidCallback onTap;
+
+  const _QuickActionTile({
+    required this.label,
+    required this.subtitle,
+    required this.icon,
+    required this.iconColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Ink(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.7)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: iconColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 18, color: iconColor),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: AppTypography.labelMedium.copyWith(color: theme.colorScheme.onSurface),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CalculatorDialog extends StatefulWidget {
+  const _CalculatorDialog();
+
+  @override
+  State<_CalculatorDialog> createState() => _CalculatorDialogState();
+}
+
+class _CalculatorDialogState extends State<_CalculatorDialog> {
+  static final List<String> _history = [];
+  String _expression = '';
+  String _result = '0';
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Calculator',
+                  style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurface),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.of(context).pop(),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _expression.isEmpty ? '0' : _expression,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _result,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface),
+                  ),
+                ],
+              ),
+            ),
+            if (_history.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxHeight: 110),
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.6)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'History',
+                          style: AppTypography.labelMedium.copyWith(color: theme.colorScheme.onSurface),
+                        ),
+                        const Spacer(),
+                        GestureDetector(
+                          onTap: () => setState(_history.clear),
+                          child: Text(
+                            'Clear',
+                            style: AppTypography.labelSmall.copyWith(color: AppColors.error),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: ListView.separated(
+                        padding: EdgeInsets.zero,
+                        itemCount: _history.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 4),
+                        itemBuilder: (context, index) {
+                          final entry = _history[_history.length - 1 - index];
+                          return InkWell(
+                            onTap: () {
+                              final parts = entry.split('=');
+                              if (parts.length != 2) return;
+                              setState(() {
+                                _expression = parts.first.trim();
+                                _result = parts.last.trim();
+                              });
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 2),
+                              child: Text(
+                                entry,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            _calcRow(['C', 'DEL', '/', '*']),
+            const SizedBox(height: 8),
+            _calcRow(['7', '8', '9', '-']),
+            const SizedBox(height: 8),
+            _calcRow(['4', '5', '6', '+']),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(flex: 2, child: _CalcButton(label: '0', onTap: () => _onTap('0'))),
+                const SizedBox(width: 8),
+                Expanded(child: _CalcButton(label: '.', onTap: () => _onTap('.'))),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _CalcButton(
+                    label: '=',
+                    onTap: () => _onTap('='),
+                    filled: true,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _calcRow(List<String> labels) {
+    return Row(
+      children: labels
+          .asMap()
+          .entries
+          .map(
+            (entry) => Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(right: entry.key == labels.length - 1 ? 0 : 8),
+                child: _CalcButton(
+                  label: entry.value,
+                  onTap: () => _onTap(entry.value),
+                  filled: entry.value == 'C',
+                ),
+              ),
+            ),
+          )
+          .toList(),
+    );
+  }
+
+  void _onTap(String value) {
+    setState(() {
+      if (value == 'C') {
+        _expression = '';
+        _result = '0';
+        return;
+      }
+
+      if (value == 'DEL') {
+        if (_expression.isNotEmpty) {
+          _expression = _expression.substring(0, _expression.length - 1);
+        }
+        _result = _expression.isEmpty ? '0' : _result;
+        return;
+      }
+
+      if (value == '=') {
+        final originalExpression = _expression;
+        final computed = _tryEvaluate(_expression);
+        _result = computed ?? 'Error';
+        if (computed != null) {
+          final line = '$originalExpression = $computed';
+          if (originalExpression.isNotEmpty) {
+            _history.remove(line);
+            _history.add(line);
+            if (_history.length > 8) {
+              _history.removeAt(0);
+            }
+          }
+          _expression = computed;
+        }
+        return;
+      }
+
+      final operators = {'+', '-', '*', '/'};
+      if (operators.contains(value)) {
+        if (_expression.isEmpty && value != '-') return;
+        if (_expression.isNotEmpty && operators.contains(_expression[_expression.length - 1])) {
+          _expression = _expression.substring(0, _expression.length - 1) + value;
+        } else {
+          _expression += value;
+        }
+      } else {
+        _expression += value;
+      }
+
+      final preview = _tryEvaluate(_expression);
+      if (preview != null) {
+        _result = preview;
+      }
+    });
+  }
+
+  String? _tryEvaluate(String expression) {
+    if (expression.trim().isEmpty) return '0';
+    final normalized = expression;
+    final tokens = _tokenize(normalized);
+    if (tokens.isEmpty) return null;
+    final postfix = _toPostfix(tokens);
+    if (postfix.isEmpty) return null;
+    final value = _evalPostfix(postfix);
+    if (value == null || value.isNaN || value.isInfinite) return null;
+    if ((value - value.roundToDouble()).abs() < 0.0000001) {
+      return value.round().toString();
+    }
+    return value.toStringAsFixed(6).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  List<String> _tokenize(String input) {
+    final out = <String>[];
+    final number = StringBuffer();
+    final operators = {'+', '-', '*', '/'};
+
+    for (int i = 0; i < input.length; i++) {
+      final ch = input[i];
+      final prev = i > 0 ? input[i - 1] : '';
+      final isUnaryMinus = ch == '-' && (i == 0 || operators.contains(prev));
+
+      if ((ch.codeUnitAt(0) >= 48 && ch.codeUnitAt(0) <= 57) || ch == '.' || isUnaryMinus) {
+        number.write(ch);
+      } else if (operators.contains(ch)) {
+        if (number.isNotEmpty) {
+          out.add(number.toString());
+          number.clear();
+        }
+        out.add(ch);
+      } else {
+        return <String>[];
+      }
+    }
+
+    if (number.isNotEmpty) {
+      out.add(number.toString());
+    }
+    return out;
+  }
+
+  List<String> _toPostfix(List<String> tokens) {
+    final output = <String>[];
+    final opStack = <String>[];
+    final prec = {'+': 1, '-': 1, '*': 2, '/': 2};
+
+    for (final token in tokens) {
+      if (double.tryParse(token) != null) {
+        output.add(token);
+        continue;
+      }
+      while (opStack.isNotEmpty && (prec[opStack.last] ?? 0) >= (prec[token] ?? 0)) {
+        output.add(opStack.removeLast());
+      }
+      opStack.add(token);
+    }
+
+    while (opStack.isNotEmpty) {
+      output.add(opStack.removeLast());
+    }
+    return output;
+  }
+
+  double? _evalPostfix(List<String> postfix) {
+    final stack = <double>[];
+    for (final token in postfix) {
+      final n = double.tryParse(token);
+      if (n != null) {
+        stack.add(n);
+        continue;
+      }
+
+      if (stack.length < 2) return null;
+      final b = stack.removeLast();
+      final a = stack.removeLast();
+      switch (token) {
+        case '+':
+          stack.add(a + b);
+          break;
+        case '-':
+          stack.add(a - b);
+          break;
+        case '*':
+          stack.add(a * b);
+          break;
+        case '/':
+          if (b == 0) return null;
+          stack.add(a / b);
+          break;
+        default:
+          return null;
+      }
+    }
+    return stack.length == 1 ? stack.single : null;
+  }
+}
+
+class _CalcButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+
+  const _CalcButton({
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Ink(
+        height: 44,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: filled ? AppColors.primary : theme.colorScheme.surface,
+          border: Border.all(
+            color: filled ? AppColors.primary : theme.colorScheme.outline,
+          ),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: AppTypography.labelLarge.copyWith(
+              color: filled ? Colors.white : theme.colorScheme.onSurface,
+            ),
+          ),
+        ),
       ),
     );
   }

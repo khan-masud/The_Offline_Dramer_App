@@ -4,14 +4,19 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
-import '../../../../core/database/database_provider.dart';
+import '../../../../core/providers/activity_log_provider.dart';
 
-// Provider for recent activity
-final recentActivityProvider = FutureProvider<List<Map<String, dynamic>>>((
-  ref,
-) {
-  final db = ref.watch(databaseProvider);
-  return db.getRecentActivity(limit: 5);
+// Provider that merges DB-based activity with the activity log
+final recentActivityProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final activityLog = ref.watch(activityLogProvider);
+  return activityLog.take(8).map((entry) {
+    return {
+      'type': entry.entityType,
+      'title': entry.displayTitle,
+      'time': entry.timestamp,
+      'icon': entry.icon,
+    };
+  }).toList();
 });
 
 class RecentActivity extends ConsumerWidget {
@@ -107,8 +112,6 @@ class RecentActivity extends ConsumerWidget {
 
   IconData _getIcon(String icon) {
     switch (icon) {
-      case 'check':
-        return Icons.check_circle_rounded;
       case 'add_task':
         return Icons.add_task_rounded;
       case 'note':
@@ -117,6 +120,16 @@ class RecentActivity extends ConsumerWidget {
         return Icons.arrow_downward_rounded;
       case 'expense':
         return Icons.arrow_upward_rounded;
+      case 'update':
+        return Icons.edit_rounded;
+      case 'delete':
+        return Icons.delete_outline_rounded;
+      case 'routine':
+        return Icons.replay_rounded;
+      case 'habit':
+        return Icons.trending_up_rounded;
+      case 'link':
+        return Icons.link_rounded;
       default:
         return Icons.circle;
     }
@@ -124,8 +137,6 @@ class RecentActivity extends ConsumerWidget {
 
   Color _getColor(String icon) {
     switch (icon) {
-      case 'check':
-        return AppColors.success;
       case 'add_task':
         return AppColors.primary;
       case 'note':
@@ -134,6 +145,16 @@ class RecentActivity extends ConsumerWidget {
         return AppColors.success;
       case 'expense':
         return AppColors.error;
+      case 'update':
+        return AppColors.info;
+      case 'delete':
+        return AppColors.error;
+      case 'routine':
+        return AppColors.purple;
+      case 'habit':
+        return AppColors.orange;
+      case 'link':
+        return AppColors.purple;
       default:
         return AppColors.info;
     }
@@ -141,12 +162,18 @@ class RecentActivity extends ConsumerWidget {
 
   String _getSubtitle(String type) {
     switch (type) {
-      case 'todo':
+      case 'task':
         return 'Task';
       case 'note':
         return 'Note';
       case 'transaction':
         return 'Transaction';
+      case 'routine':
+        return 'Routine';
+      case 'habit':
+        return 'Habit';
+      case 'link':
+        return 'Link';
       default:
         return '';
     }

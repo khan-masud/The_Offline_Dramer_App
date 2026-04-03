@@ -9,6 +9,7 @@ import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/providers/activity_log_provider.dart';
 import '../../data/money_provider.dart';
 
 class AddTransactionSheet extends ConsumerStatefulWidget {
@@ -80,6 +81,11 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
         recurringPattern: Value(_isRecurring ? _recurringPattern : null),
         createdAt: Value(widget.transaction!.createdAt),
       ));
+      ref.read(activityLogProvider.notifier).log(
+        type: 'update',
+        entityType: 'transaction',
+        entityTitle: _titleCtrl.text.trim(),
+      );
     } else {
       await db.addTransaction(TransactionsCompanion(
         amount: Value(amount),
@@ -92,6 +98,11 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
         recurringPattern: Value(_isRecurring ? _recurringPattern : null),
         createdAt: Value(now),
       ));
+      ref.read(activityLogProvider.notifier).log(
+        type: 'add',
+        entityType: 'transaction',
+        entityTitle: _titleCtrl.text.trim(),
+      );
     }
 
     if (mounted) Navigator.pop(context);

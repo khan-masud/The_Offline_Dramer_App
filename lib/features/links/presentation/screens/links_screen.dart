@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/providers/undo_provider.dart';
+import '../../../../core/providers/activity_log_provider.dart';
 import '../../data/links_provider.dart';
 
 class LinksScreen extends ConsumerWidget {
@@ -149,24 +151,51 @@ class LinksScreen extends ConsumerWidget {
                       onEdit: () => _showAddLinkSheet(context, ref, link: link),
                       onToggleFavorite: () => ref.read(databaseProvider).toggleLinkFavorite(link.id, !link.isFavorite),
                       onDelete: () {
-                        // Optimistic delete with undo
                         final itemKey = 'link_${link.id}';
-                        ref.read(hiddenItemsProvider.notifier).update((s) => {...s, itemKey});
-                        ScaffoldMessenger.of(context).clearSnackBars();
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        final db = ref.read(databaseProvider);
+                        final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
+                        final messenger = ScaffoldMessenger.of(context);
+                        
+                        hiddenNotifier.update((s) => {...s, itemKey});
+                        messenger.clearSnackBars();
+                        
+                        bool undone = false;
+                        final timer = Timer(const Duration(seconds: 5), () {
+                          if (!undone) {
+                            db.deleteLink(link.id);
+                            hiddenNotifier.update((s) {
+                              final ns = {...s};
+                              ns.remove(itemKey);
+                              return ns;
+                            });
+                            ref.read(activityLogProvider.notifier).log(
+                              entityType: 'link',
+                              entityTitle: link.title,
+                              action: 'deleted',
+                            );
+                          }
+                          messenger.hideCurrentSnackBar();
+                        });
+                        
+                        messenger.showSnackBar(
                           SnackBar(
                             content: const Text('Link deleted'),
+                            duration: const Duration(seconds: 5),
                             action: SnackBarAction(
                               label: 'UNDO',
-                              onPressed: () => ref.read(hiddenItemsProvider.notifier).update((s) => {...s}..remove(itemKey)),
+                              onPressed: () {
+                                undone = true;
+                                timer.cancel();
+                                messenger.hideCurrentSnackBar();
+                                hiddenNotifier.update((s) {
+                                  final ns = {...s};
+                                  ns.remove(itemKey);
+                                  return ns;
+                                });
+                              },
                             ),
                           ),
-                        ).closed.then((reason) {
-                          if (reason != SnackBarClosedReason.action && ref.read(hiddenItemsProvider).contains(itemKey)) {
-                            ref.read(databaseProvider).deleteLink(link.id);
-                            ref.read(hiddenItemsProvider.notifier).update((s) => {...s}..remove(itemKey));
-                          }
-                        });
+                        );
                       },
                     ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms).slideY(begin: 0.1, end: 0, delay: (50 * i).ms);
                   },
@@ -627,6 +656,11 @@ class _AddLinkSheetState extends ConsumerState<_AddLinkSheet> {
         category: Value(_selectedFolder),
         note: Value(note.isEmpty ? null : note),
       ));
+      ref.read(activityLogProvider.notifier).log(
+        entityType: 'link',
+        entityTitle: title,
+        action: 'updated',
+      );
     } else {
       await db.addLink(LinksCompanion(
         title: Value(title),
@@ -635,6 +669,11 @@ class _AddLinkSheetState extends ConsumerState<_AddLinkSheet> {
         note: Value(note.isEmpty ? null : note),
         createdAt: Value(DateTime.now()),
       ));
+      ref.read(activityLogProvider.notifier).log(
+        entityType: 'link',
+        entityTitle: title,
+        action: 'added',
+      );
     }
     
     if (mounted) Navigator.pop(context);

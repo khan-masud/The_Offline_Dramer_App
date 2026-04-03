@@ -9,14 +9,22 @@ class HourlyWeather {
   final DateTime time;
   final double temperature;
   final int weatherCode;
+  final bool isDay;
+  final String conditionText;
 
   HourlyWeather({
     required this.time,
     required this.temperature,
     required this.weatherCode,
+    required this.isDay,
+    required this.conditionText,
   });
 
-  String get icon => _getIcon(weatherCode);
+  String get icon => _getIcon(
+    weatherCode,
+    isDay: isDay,
+    conditionText: conditionText,
+  );
 }
 
 class WeatherInfo {
@@ -37,10 +45,21 @@ class WeatherInfo {
   });
 }
 
-String _getIcon(int code) {
+String _getIcon(
+  int code, {
+  required bool isDay,
+  required String conditionText,
+}) {
+  final text = conditionText.toLowerCase();
+
+  if (text.contains('thunder')) return '⛈️';
+  if (text.contains('snow') || text.contains('sleet') || text.contains('blizzard')) return '❄️';
+  if (text.contains('rain') || text.contains('drizzle') || text.contains('shower')) return '🌧️';
+  if (text.contains('fog') || text.contains('mist') || text.contains('haze')) return '🌫️';
+
   // WeatherAPI standardized codes
-  if (code == 1000) return '☀️'; // Sunny/Clear
-  if (code == 1003) return '⛅'; // Partly cloudy
+  if (code == 1000) return isDay ? '☀️' : '🌙'; // Sunny/Clear
+  if (code == 1003) return isDay ? '⛅' : '☁️'; // Partly cloudy
   if (code == 1006) return '☁️'; // Cloudy
   if (code == 1009) return '☁️'; // Overcast
   if (code == 1030) return '🌫️'; // Mist
@@ -48,8 +67,11 @@ String _getIcon(int code) {
   if (code >= 1186 && code <= 1201) return '🌧️'; // Rain
   if (code >= 1087 && code <= 1282) return '⛈️'; // Thunder/heavy
   if (code >= 1066 && code <= 1114) return '❄️'; // Snow
-  
-  return '🌡️'; 
+
+  if (text.contains('cloud')) return '☁️';
+  if (text.contains('clear') || text.contains('sunny')) return isDay ? '☀️' : '🌙';
+
+  return isDay ? '🌤️' : '🌙';
 }
 
 final weatherProvider = FutureProvider<WeatherInfo?>((ref) async {
@@ -153,6 +175,8 @@ final weatherProvider = FutureProvider<WeatherInfo?>((ref) async {
             time: time,
             temperature: (hourObj['temp_c'] as num).toDouble(),
             weatherCode: (hourObj['condition']['code'] as num).toInt(),
+            isDay: ((hourObj['is_day'] as num?)?.toInt() ?? (time.hour >= 6 && time.hour < 18 ? 1 : 0)) == 1,
+            conditionText: (hourObj['condition']['text'] as String?) ?? '',
           ),
         );
       }

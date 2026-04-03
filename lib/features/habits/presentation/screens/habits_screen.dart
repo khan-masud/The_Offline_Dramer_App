@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../providers/notification_preferences_provider.dart';
 import '../../../../core/providers/undo_provider.dart';
+import '../../../../core/providers/activity_log_provider.dart';
 import '../../data/habits_provider.dart';
 import 'package:flutter/services.dart';
 
@@ -109,27 +111,50 @@ class HabitsScreen extends ConsumerWidget {
                             },
                             onDelete: () {
                               final itemKey = 'habit_${habit.id}';
-                              ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
-                              ScaffoldMessenger.of(context).clearSnackBars();
-                              ScaffoldMessenger.of(context).showSnackBar(
+                              final db = ref.read(databaseProvider);
+                              final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
+                              final messenger = ScaffoldMessenger.of(context);
+                              
+                              hiddenNotifier.update((state) => {...state, itemKey});
+                              messenger.clearSnackBars();
+                              
+                              bool undone = false;
+                              final timer = Timer(const Duration(seconds: 5), () {
+                                if (!undone) {
+                                  db.deleteHabit(habit.id);
+                                  hiddenNotifier.update((state) {
+                                    final s = {...state};
+                                    s.remove(itemKey);
+                                    return s;
+                                  });
+                                  ref.read(activityLogProvider.notifier).log(
+                                    entityType: 'habit',
+                                    entityTitle: habit.title,
+                                    action: 'deleted',
+                                  );
+                                }
+                                messenger.hideCurrentSnackBar();
+                              });
+                              
+                              messenger.showSnackBar(
                                 SnackBar(
                                   content: const Text('Habit deleted'),
-                                  duration: const Duration(seconds: 4),
+                                  duration: const Duration(seconds: 5),
                                   action: SnackBarAction(
                                     label: 'UNDO',
                                     onPressed: () {
-                                      ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                      undone = true;
+                                      timer.cancel();
+                                      messenger.hideCurrentSnackBar();
+                                      hiddenNotifier.update((state) {
+                                        final s = {...state};
+                                        s.remove(itemKey);
+                                        return s;
+                                      });
                                     },
                                   ),
                                 ),
-                              ).closed.then((reason) {
-                                if (reason != SnackBarClosedReason.action) {
-                                  if (ref.read(hiddenItemsProvider).contains(itemKey)) {
-                                    ref.read(databaseProvider).deleteHabit(habit.id);
-                                    ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                                  }
-                                }
-                              });
+                              );
                             },
                           ).animate().fadeIn(delay: (80 * i).ms, duration: 300.ms);
                         },
@@ -344,6 +369,12 @@ class _AddHabitSheetState extends ConsumerState<_AddHabitSheet> {
       reminderTime: Value(_reminderTime != null ? '${_reminderTime!.hour.toString().padLeft(2, '0')}:${_reminderTime!.minute.toString().padLeft(2, '0')}' : null),
       createdAt: Value(DateTime.now()),
     ));
+
+    ref.read(activityLogProvider.notifier).log(
+      entityType: 'habit',
+      entityTitle: _titleCtrl.text.trim(),
+      action: 'added',
+    );
     
     if (_reminderTime != null) {
       final prefs = ref.read(notificationPreferencesProvider);

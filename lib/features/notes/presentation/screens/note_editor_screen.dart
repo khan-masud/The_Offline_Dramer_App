@@ -5,6 +5,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../../core/providers/activity_log_provider.dart';
 
 class MarkdownTextController extends TextEditingController {
   MarkdownTextController({super.text});
@@ -88,6 +89,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
 
     _titleCtrl.addListener(_onChanged);
     _contentCtrl.addListener(_onChanged);
+    _titleFocus.addListener(_onChanged);
+    _contentFocus.addListener(_onChanged);
   }
 
   void _onChanged() => setState(() => _hasChanges = true);
@@ -124,6 +127,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         isPinned: Value(_isPinned),
         updatedAt: Value(now),
       ));
+      ref.read(activityLogProvider.notifier).log(
+        type: 'update',
+        entityType: 'note',
+        entityTitle: finalTitle,
+      );
     } else {
       await db.addNote(NotesCompanion(
         title: Value(finalTitle),
@@ -134,36 +142,53 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         createdAt: Value(now),
         updatedAt: Value(now),
       ));
+      ref.read(activityLogProvider.notifier).log(
+        type: 'add',
+        entityType: 'note',
+        entityTitle: finalTitle,
+      );
     }
   }
 
   // Formatting helpers
   void _toggleWrap(String wrapWith) {
+    _toggleWrapPair(wrapWith, wrapWith);
+  }
+
+  void _toggleWrapPair(String prefix, String suffix) {
     final text = _contentCtrl.text;
     final selection = _contentCtrl.selection;
-    
+
     if (selection.start == -1) {
-      _contentCtrl.text = '$text$wrapWith$wrapWith';
-      _contentCtrl.selection = TextSelection.collapsed(offset: _contentCtrl.text.length - wrapWith.length);
+      _contentCtrl.text = '$text$prefix$suffix';
+      _contentCtrl.selection =
+          TextSelection.collapsed(offset: _contentCtrl.text.length - suffix.length);
     } else {
       final start = selection.start;
       final end = selection.end;
       final selectedText = text.substring(start, end);
-      
+
       // If already wrapped, remove it. Otherwise add it.
-      if (start >= wrapWith.length && end <= text.length - wrapWith.length &&
-          text.substring(start - wrapWith.length, start) == wrapWith &&
-          text.substring(end, end + wrapWith.length) == wrapWith) {
-        
+      if (start >= prefix.length &&
+          end <= text.length - suffix.length &&
+          text.substring(start - prefix.length, start) == prefix &&
+          text.substring(end, end + suffix.length) == suffix) {
         // Remove wrap
-        final newText = text.replaceRange(start - wrapWith.length, end + wrapWith.length, selectedText);
+        final newText =
+            text.replaceRange(start - prefix.length, end + suffix.length, selectedText);
         _contentCtrl.text = newText;
-        _contentCtrl.selection = TextSelection(baseOffset: start - wrapWith.length, extentOffset: end - wrapWith.length);
+        _contentCtrl.selection = TextSelection(
+          baseOffset: start - prefix.length,
+          extentOffset: end - prefix.length,
+        );
       } else {
         // Add wrap
-        final newText = text.replaceRange(start, end, '$wrapWith$selectedText$wrapWith');
+        final newText = text.replaceRange(start, end, '$prefix$selectedText$suffix');
         _contentCtrl.text = newText;
-        _contentCtrl.selection = TextSelection(baseOffset: start + wrapWith.length, extentOffset: end + wrapWith.length);
+        _contentCtrl.selection = TextSelection(
+          baseOffset: start + prefix.length,
+          extentOffset: end + prefix.length,
+        );
       }
     }
     _contentFocus.requestFocus();
@@ -258,46 +283,89 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Title
-                    TextField(
-                      controller: _titleCtrl,
-                      focusNode: _titleFocus,
-                      style: AppTypography.noteTitle.copyWith(color: theme.colorScheme.onSurface),
-                      decoration: InputDecoration(
-                        hintText: 'Title',
-                        hintStyle: AppTypography.noteTitle.copyWith(color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        contentPadding: EdgeInsets.zero,
-                        isDense: true,
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface.withValues(alpha: 0.75),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: _titleFocus.hasFocus
+                              ? AppColors.primary.withValues(alpha: 0.6)
+                              : theme.colorScheme.outline.withValues(alpha: 0.25),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      maxLines: null,
-                      textCapitalization: TextCapitalization.sentences,
-                    ),
-                    const SizedBox(height: 16),
-                    // Content
-                    TextField(
-                      controller: _contentCtrl,
-                      focusNode: _contentFocus,
-                      autofocus: !isEditing,
-                      style: AppTypography.noteContent.copyWith(color: theme.colorScheme.onSurface),
-                      decoration: InputDecoration(
-                        hintText: 'Note',
-                        hintStyle: AppTypography.noteContent.copyWith(color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        contentPadding: EdgeInsets.zero,
+                      child: TextField(
+                        controller: _titleCtrl,
+                        focusNode: _titleFocus,
+                        style: AppTypography.noteTitle.copyWith(color: theme.colorScheme.onSurface),
+                        decoration: InputDecoration(
+                          hintText: 'Title',
+                          hintStyle: AppTypography.noteTitle.copyWith(color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6)),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                          isDense: true,
+                        ),
+                        maxLines: null,
+                        textCapitalization: TextCapitalization.sentences,
                       ),
-                      maxLines: null,
-                      textCapitalization: TextCapitalization.sentences,
                     ),
-                    const SizedBox(height: 100), // padding for keyboard/bottom bar
+                    const SizedBox(height: 12),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      curve: Curves.easeOut,
+                      constraints: const BoxConstraints(minHeight: 340),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(
+                          color: _contentFocus.hasFocus
+                              ? AppColors.primary.withValues(alpha: 0.6)
+                              : theme.colorScheme.outline.withValues(alpha: 0.25),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: TextField(
+                        controller: _contentCtrl,
+                        focusNode: _contentFocus,
+                        autofocus: !isEditing,
+                        style: AppTypography.noteContent.copyWith(
+                          color: theme.colorScheme.onSurface,
+                          height: 1.55,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'Write your note...',
+                          hintStyle: AppTypography.noteContent.copyWith(color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.65)),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        maxLines: null,
+                        textCapitalization: TextCapitalization.sentences,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -306,14 +374,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             Container(
               decoration: BoxDecoration(
                 color: theme.scaffoldBackgroundColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -2))
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, -3))
                 ],
               ),
               child: SafeArea(
+                top: false,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  child: Row(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
                     children: [
                       // Add formatting
                       IconButton(
@@ -332,14 +404,34 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                         onPressed: () => _toggleWrap('**'),
                       ),
                       IconButton(
+                        icon: const Icon(Icons.format_italic_rounded),
+                        tooltip: 'Italic',
+                        onPressed: () => _toggleWrap('*'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.format_underlined_rounded),
+                        tooltip: 'Underline',
+                        onPressed: () => _toggleWrapPair('<u>', '</u>'),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.title_rounded),
+                        tooltip: 'Heading',
+                        onPressed: () => _toggleLinePrefix('# '),
+                      ),
+                      IconButton(
                         icon: const Icon(Icons.palette_outlined),
                         tooltip: 'Color',
                         onPressed: _showColorPicker,
                       ),
-                      Expanded(
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
                         child: Text(
                           _folder ?? 'No folder',
-                          textAlign: TextAlign.center,
                           style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
                         ),
                       ),
@@ -349,6 +441,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                         onPressed: _showFolderPicker,
                       ),
                     ],
+                    ),
                   ),
                 ),
               ),

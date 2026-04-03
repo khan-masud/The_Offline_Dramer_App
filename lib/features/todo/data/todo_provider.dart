@@ -5,7 +5,7 @@ import '../../../core/database/database_provider.dart';
 // Filter state
 enum TodoFilter { all, pending, completed }
 
-final todoFilterProvider = StateProvider<TodoFilter>((ref) => TodoFilter.all);
+final todoFilterProvider = StateProvider<TodoFilter>((ref) => TodoFilter.pending);
 
 // Reactive todo list
 final todosProvider = StreamProvider<List<Todo>>((ref) {

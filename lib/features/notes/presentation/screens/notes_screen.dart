@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -8,38 +9,24 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/providers/undo_provider.dart';
+import '../../../../core/providers/activity_log_provider.dart';
 import '../../data/notes_provider.dart';
 import 'note_editor_screen.dart';
+import 'note_preview_screen.dart';
 
 // Note colors
 const _noteColors = [
-  Colors.transparent, // 0 = default
-  Color(0xFFF28B82), // 1 = red
-  Color(0xFFFBBC04), // 2 = orange
-  Color(0xFFFFF475), // 3 = yellow
-  Color(0xFFCCFF90), // 4 = green
-  Color(0xFFA7FFEB), // 5 = teal
-  Color(0xFFCBF0F8), // 6 = blue
-  Color(0xFFAECBFA), // 7 = dark blue
-  Color(0xFFD7AEFB), // 8 = purple
-  Color(0xFFFDCFE8), // 9 = pink
-  Color(0xFFE6C9A8), // 10 = brown
-  Color(0xFFE8EAED), // 11 = grey
+  Colors.transparent,
+  Color(0xFFF28B82), Color(0xFFFBBC04), Color(0xFFFFF475), Color(0xFFCCFF90),
+  Color(0xFFA7FFEB), Color(0xFFCBF0F8), Color(0xFFAECBFA), Color(0xFFD7AEFB),
+  Color(0xFFFDCFE8), Color(0xFFE6C9A8), Color(0xFFE8EAED),
 ];
 
 const _noteColorsDark = [
   Colors.transparent,
-  Color(0xFF5C2B29),
-  Color(0xFF614A19),
-  Color(0xFF635D19),
-  Color(0xFF345920),
-  Color(0xFF16504B),
-  Color(0xFF2D555E),
-  Color(0xFF1E3A5F),
-  Color(0xFF42275E),
-  Color(0xFF5B2245),
-  Color(0xFF442F19),
-  Color(0xFF3C3F43),
+  Color(0xFF5C2B29), Color(0xFF614A19), Color(0xFF635D19), Color(0xFF345920),
+  Color(0xFF16504B), Color(0xFF2D555E), Color(0xFF1E3A5F), Color(0xFF42275E),
+  Color(0xFF5B2245), Color(0xFF442F19), Color(0xFF3C3F43),
 ];
 
 class NotesScreen extends ConsumerWidget {
@@ -54,9 +41,12 @@ class NotesScreen extends ConsumerWidget {
     final activeFolder = ref.watch(noteFolderFilterProvider);
 
     return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
+      appBar: AppBar(
+        title: const Text('Notes'),
+        centerTitle: false,
+      ),
+      body: Column(
+        children: [
             // Floating search bar (Keep-style)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -140,34 +130,19 @@ class NotesScreen extends ConsumerWidget {
                       return _NoteCard(
                         note: note,
                         backgroundColor: bgColor,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => NoteEditorScreen(note: note)),
+                        onTap: () => _openWithFadeSlide(
+                          context,
+                          NotePreviewScreen(note: note),
                         ),
-                        onTogglePin: () => ref.read(databaseProvider).toggleNotePin(note.id, !note.isPinned),
-                        onDelete: () {
-                          final itemKey = 'note_${note.id}';
-                          ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
-                          ScaffoldMessenger.of(context).clearSnackBars();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('Note deleted'),
-                              duration: const Duration(seconds: 4),
-                              action: SnackBarAction(
-                                label: 'UNDO',
-                                onPressed: () {
-                                  ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                                },
-                              ),
-                            ),
-                          ).closed.then((reason) {
-                            if (reason != SnackBarClosedReason.action) {
-                              if (ref.read(hiddenItemsProvider).contains(itemKey)) {
-                                ref.read(databaseProvider).deleteNote(note.id);
-                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                              }
-                            }
-                          });
+                        onTogglePin: () {
+                          ref.read(databaseProvider).toggleNotePin(note.id, !note.isPinned);
+                          ref.read(activityLogProvider.notifier).log(
+                            type: 'update',
+                            entityType: 'note',
+                            entityTitle: note.title,
+                          );
                         },
+                        onDelete: () => _deleteNote(context, ref, note),
                       ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
                     },
                   );
@@ -177,18 +152,84 @@ class NotesScreen extends ConsumerWidget {
               ),
             ),
           ],
-        ),
       ),
-      // Keep style rounded floating bottom bar or simple FAB
       floatingActionButton: FloatingActionButton(
         heroTag: 'notes_fab',
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const NoteEditorScreen()),
-        ),
+        onPressed: () => _openWithFadeSlide(context, const NoteEditorScreen()),
         backgroundColor: theme.colorScheme.primaryContainer,
         elevation: 4,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: Icon(Icons.add_rounded, color: theme.colorScheme.onPrimaryContainer, size: 32),
+      ),
+    );
+  }
+
+  Future<void> _openWithFadeSlide(BuildContext context, Widget page) {
+    return Navigator.of(context).push(
+      PageRouteBuilder<void>(
+        pageBuilder: (_, animation, __) => FadeTransition(
+          opacity: animation,
+          child: SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0.0, 0.04),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+            child: page,
+          ),
+        ),
+        transitionDuration: const Duration(milliseconds: 260),
+      ),
+    );
+  }
+
+  void _deleteNote(BuildContext context, WidgetRef ref, Note note) {
+    final itemKey = 'note_${note.id}';
+    final db = ref.read(databaseProvider);
+    final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
+    final messenger = ScaffoldMessenger.of(context);
+    
+    // Hide immediately
+    hiddenNotifier.update((state) => {...state, itemKey});
+    
+    messenger.clearSnackBars();
+    
+    bool undone = false;
+    // Schedule actual deletion
+    final timer = Timer(const Duration(seconds: 3), () async {
+      if (!undone) {
+        await db.deleteNote(note.id);
+        hiddenNotifier.update((state) {
+          final s = {...state};
+          s.remove(itemKey);
+          return s;
+        });
+        // Log activity
+        ref.read(activityLogProvider.notifier).log(
+          type: 'delete',
+          entityType: 'note',
+          entityTitle: note.title,
+        );
+      }
+      messenger.hideCurrentSnackBar();
+    });
+
+    messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Note deleted'),
+        duration: const Duration(seconds: 3),
+        action: SnackBarAction(
+          label: 'UNDO',
+          onPressed: () {
+            undone = true;
+            timer.cancel();
+            messenger.hideCurrentSnackBar();
+            hiddenNotifier.update((state) {
+              final s = {...state};
+              s.remove(itemKey);
+              return s;
+            });
+          },
+        ),
       ),
     );
   }
@@ -236,6 +277,13 @@ class _NoteCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: isDefaultColor ? theme.scaffoldBackgroundColor : backgroundColor,
           borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
+          boxShadow: [
+            BoxShadow(
+              color: theme.shadowColor.withValues(alpha: 0.08),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
           border: Border.all(
             color: isDefaultColor ? theme.colorScheme.outline.withValues(alpha: 0.5) : backgroundColor,
             width: 1,
@@ -246,7 +294,6 @@ class _NoteCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Title and Pin
             if (note.title.isNotEmpty || note.isPinned)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -277,11 +324,9 @@ class _NoteCard extends StatelessWidget {
                 ],
               ),
             
-            // Content
             if (note.content.isNotEmpty)
               _buildContentPreview(context, isDefaultColor),
 
-            // Folder Label
             if (note.folder != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
@@ -348,8 +393,13 @@ class _NoteCard extends StatelessWidget {
       );
     }
 
+    // Strip markdown formatting for preview
+    String previewText = note.content
+        .replaceAll(RegExp(r'\*\*(.*?)\*\*'), r'$1')
+        .replaceAll(RegExp(r'\*(.*?)\*'), r'$1');
+
     return Text(
-      note.content,
+      previewText,
       maxLines: 8,
       overflow: TextOverflow.ellipsis,
       style: AppTypography.noteContent.copyWith(

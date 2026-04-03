@@ -50,6 +50,18 @@ class DashboardShortcuts extends StatelessWidget {
               color: AppColors.info,
               onTap: () => Navigator.of(context).pushNamed('/settings'),
             ),
+            _ShortcutItem(
+              icon: Icons.cake_outlined,
+              label: 'Birthdays',
+              color: AppColors.pink,
+              onTap: () => Navigator.of(context).pushNamed('/birthdays'),
+            ),
+            _ShortcutItem(
+              icon: Icons.contact_phone_outlined,
+              label: 'Contacts',
+              color: AppColors.teal,
+              onTap: () => Navigator.of(context).pushNamed('/contacts'),
+            ),
           ],
         ),
       ],

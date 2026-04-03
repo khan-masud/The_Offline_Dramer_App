@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../../providers/notification_preferences_provider.dart';
 import '../../../../core/providers/undo_provider.dart';
+import '../../../../core/providers/activity_log_provider.dart';
 import '../../data/todo_provider.dart';
 import 'todo_timer_dialog.dart';
 import 'package:flutter/services.dart';
@@ -163,31 +165,60 @@ class TodoScreen extends ConsumerWidget {
                             );
                           }
                           ref.read(databaseProvider).toggleTodo(todo.id, !todo.isCompleted);
+                          ref.read(activityLogProvider.notifier).log(
+                            type: 'update',
+                            entityType: 'task',
+                            entityTitle: todo.title,
+                          );
                         },
                         onDelete: () {
                           final itemKey = 'todo_${todo.id}';
-                          ref.read(hiddenItemsProvider.notifier).update((state) => {...state, itemKey});
-                          ScaffoldMessenger.of(context).clearSnackBars();
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          final db = ref.read(databaseProvider);
+                          final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
+                          final notif = ref.read(notificationServiceProvider);
+                          final messenger = ScaffoldMessenger.of(context);
+                          
+                          hiddenNotifier.update((state) => {...state, itemKey});
+                          messenger.clearSnackBars();
+                          
+                          bool undone = false;
+                          final timer = Timer(const Duration(seconds: 3), () async {
+                            if (!undone) {
+                              await notif.cancelReminder(todo.id);
+                              await db.deleteTodo(todo.id);
+                              hiddenNotifier.update((state) {
+                                final s = {...state};
+                                s.remove(itemKey);
+                                return s;
+                              });
+                              ref.read(activityLogProvider.notifier).log(
+                                type: 'delete',
+                                entityType: 'task',
+                                entityTitle: todo.title,
+                              );
+                            }
+                            messenger.hideCurrentSnackBar();
+                          });
+                          
+                          messenger.showSnackBar(
                             SnackBar(
                               content: const Text('Todo deleted'),
-                              duration: const Duration(seconds: 4),
+                              duration: const Duration(seconds: 3),
                               action: SnackBarAction(
                                 label: 'UNDO',
                                 onPressed: () {
-                                  ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
+                                  undone = true;
+                                  timer.cancel();
+                                  messenger.hideCurrentSnackBar();
+                                  hiddenNotifier.update((state) {
+                                    final s = {...state};
+                                    s.remove(itemKey);
+                                    return s;
+                                  });
                                 },
                               ),
                             ),
-                          ).closed.then((reason) {
-                            if (reason != SnackBarClosedReason.action) {
-                              if (ref.read(hiddenItemsProvider).contains(itemKey)) {
-                                ref.read(notificationServiceProvider).cancelReminder(todo.id);
-                                ref.read(databaseProvider).deleteTodo(todo.id);
-                                ref.read(hiddenItemsProvider.notifier).update((state) => {...state}..remove(itemKey));
-                              }
-                            }
-                          });
+                          );
                         },
                         onEdit: () => _showAddEditSheet(context, ref, todo: todo),
                       ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
@@ -491,52 +522,55 @@ class _TodoCard extends ConsumerWidget {
                                       ],
                                     ),
                                   ),
-
-                                  // Actions
-                                  Column(
-                                    mainAxisAlignment: MainAxisAlignment.start,
-                                    children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.timer_outlined),
-                                        color: AppColors.warning,
-                                        onPressed: () {
-                                          showDialog(
-                                            context: context,
-                                            builder:
-                                                (context) =>
-                                                    TodoTimerDialog(todo: todo),
-                                          );
-                                        },
-                                        padding: const EdgeInsets.all(4),
-                                        constraints: const BoxConstraints(),
-                                        iconSize: 20,
-                                        tooltip: 'Start Focus',
-                                      ),
-                                      const SizedBox(height: 12),
-                                      IconButton(
-                                        icon: const Icon(Icons.edit_rounded),
-                                        color: theme.colorScheme.primary,
-                                        onPressed: onEdit,
-                                        padding: const EdgeInsets.all(4),
-                                        constraints: const BoxConstraints(),
-                                        iconSize: 20,
-                                        tooltip: 'Edit task',
-                                      ),
-                                      const SizedBox(height: 12),
-                                      IconButton(
-                                        icon: const Icon(
-                                          Icons.delete_outline_rounded,
-                                        ),
-                                        color: AppColors.error,
-                                        onPressed: onDelete,
-                                        padding: const EdgeInsets.all(4),
-                                        constraints: const BoxConstraints(),
-                                        iconSize: 20,
-                                        tooltip: 'Delete task',
-                                      ),
-                                    ],
-                                  ),
                                 ],
+                              ),
+
+                              const SizedBox(height: 10),
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.timer_outlined),
+                                      color: AppColors.warning,
+                                      onPressed: () {
+                                        showDialog(
+                                          context: context,
+                                          builder:
+                                              (context) =>
+                                                  TodoTimerDialog(todo: todo),
+                                        );
+                                      },
+                                      padding: const EdgeInsets.all(4),
+                                      constraints: const BoxConstraints(),
+                                      iconSize: 20,
+                                      tooltip: 'Start Focus',
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      icon: const Icon(Icons.edit_rounded),
+                                      color: theme.colorScheme.primary,
+                                      onPressed: onEdit,
+                                      padding: const EdgeInsets.all(4),
+                                      constraints: const BoxConstraints(),
+                                      iconSize: 20,
+                                      tooltip: 'Edit task',
+                                    ),
+                                    const SizedBox(width: 8),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_outline_rounded,
+                                      ),
+                                      color: AppColors.error,
+                                      onPressed: onDelete,
+                                      padding: const EdgeInsets.all(4),
+                                      constraints: const BoxConstraints(),
+                                      iconSize: 20,
+                                      tooltip: 'Delete task',
+                                    ),
+                                  ],
+                                ),
                               ),
 
                               // Subtasks Section
@@ -813,10 +847,20 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
           updatedAt: Value(DateTime.now()),
         ),
       );
+      ref.read(activityLogProvider.notifier).log(
+        type: 'add',
+        entityType: 'task',
+        entityTitle: _titleController.text.trim(),
+      );
     } else {
       todoId = widget.todo!.id;
       await db.updateTodo(
         companion.copyWith(id: Value(todoId), updatedAt: Value(DateTime.now())),
+      );
+      ref.read(activityLogProvider.notifier).log(
+        type: 'update',
+        entityType: 'task',
+        entityTitle: _titleController.text.trim(),
       );
 
       // Delete existing subtasks first to recreate

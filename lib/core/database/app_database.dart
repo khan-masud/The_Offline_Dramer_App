@@ -56,6 +56,7 @@ class Routines extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get title => text()();
   TextColumn get description => text().nullable()();
+  IntColumn get priority => integer().withDefault(const Constant(2))(); // 1=low,2=medium,3=high
   TextColumn get days => text().withDefault(const Constant('1,2,3,4,5'))(); // 1=Mon..7=Sun
   TextColumn get reminderTime => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
@@ -168,18 +169,44 @@ class DebtPayments extends Table {
   DateTimeColumn get paidAt => dateTime()();
 }
 
+// ==================== BIRTHDAYS ====================
+class Birthdays extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get personName => text().withLength(min: 1, max: 200)();
+  TextColumn get phone => text().nullable()();
+  TextColumn get note => text().nullable()();
+  DateTimeColumn get dateOfBirth => dateTime()();
+  BoolColumn get remindDayBefore => boolean().withDefault(const Constant(true))();
+  BoolColumn get remindOnDay => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+}
+
+// ==================== CONTACT LIST ====================
+class ContactEntries extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get displayName => text().withLength(min: 1, max: 200)();
+  TextColumn get phone => text().withLength(min: 1, max: 80)();
+  TextColumn get normalizedPhone => text().withLength(min: 1, max: 80)();
+  TextColumn get source => text().withDefault(const Constant('manual'))(); // manual or phone
+  TextColumn get externalContactId => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+}
+
 // ==================== DATABASE ====================
 @DriftDatabase(tables: [
   Todos, SubTasks, FocusSessions, 
   Notes, Routines, RoutineItems, RoutineSubTasks, RoutineCompletions,
   Transactions, MonthlyBudgets, LinkFolders, Links, Habits, HabitCompletions,
   Debts, DebtPayments,
+  Birthdays, ContactEntries,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(conn.connect());
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -223,6 +250,13 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 10) {
         await m.createTable(linkFolders);
+      }
+      if (from < 11) {
+        await m.addColumn(routines, routines.priority);
+      }
+      if (from < 12) {
+        await m.createTable(birthdays);
+        await m.createTable(contactEntries);
       }
     },
   );
@@ -330,10 +364,18 @@ class AppDatabase extends _$AppDatabase {
 
   // === ROUTINE QUERIES ===
   Stream<List<Routine>> watchAllRoutines() =>
-      (select(routines)..orderBy([(r) => OrderingTerm.desc(r.createdAt)])).watch();
+      (select(routines)
+        ..orderBy([
+          (r) => OrderingTerm.desc(r.priority),
+          (r) => OrderingTerm.desc(r.createdAt),
+        ])).watch();
 
     Future<List<Routine>> getAllRoutines() =>
-      (select(routines)..orderBy([(r) => OrderingTerm.desc(r.createdAt)])).get();
+      (select(routines)
+        ..orderBy([
+          (r) => OrderingTerm.desc(r.priority),
+          (r) => OrderingTerm.desc(r.createdAt),
+        ])).get();
 
   Future<int> addRoutine(RoutinesCompanion entry) => into(routines).insert(entry);
 
@@ -851,4 +893,70 @@ class AppDatabase extends _$AppDatabase {
     }
     return result;
   }
+
+  // === BIRTHDAY QUERIES ===
+  Stream<List<Birthday>> watchAllBirthdays() {
+    return (select(birthdays)
+          ..orderBy([
+            (b) => OrderingTerm.asc(b.dateOfBirth),
+            (b) => OrderingTerm.asc(b.personName),
+          ]))
+        .watch();
+  }
+
+  Future<List<Birthday>> getAllBirthdays() {
+    return (select(birthdays)
+          ..orderBy([
+            (b) => OrderingTerm.asc(b.dateOfBirth),
+            (b) => OrderingTerm.asc(b.personName),
+          ]))
+        .get();
+  }
+
+  Future<int> addBirthday(BirthdaysCompanion entry) => into(birthdays).insert(entry);
+
+  Future<bool> updateBirthday(BirthdaysCompanion entry) =>
+      (update(birthdays)..where((b) => b.id.equals(entry.id.value))).write(entry).then((rows) => rows > 0);
+
+  Future<int> deleteBirthday(int id) => (delete(birthdays)..where((b) => b.id.equals(id))).go();
+
+  // === CONTACT QUERIES ===
+  Stream<List<ContactEntry>> watchAllContactEntries({String? search}) {
+    final query = select(contactEntries)
+      ..orderBy([
+        (c) => OrderingTerm.asc(c.displayName),
+        (c) => OrderingTerm.desc(c.updatedAt),
+      ]);
+
+    if (search != null && search.trim().isNotEmpty) {
+      final q = '%${search.trim()}%';
+      query.where((c) => c.displayName.like(q) | c.phone.like(q));
+    }
+
+    return query.watch();
+  }
+
+  Future<List<ContactEntry>> getAllContactEntries() {
+    return (select(contactEntries)
+          ..orderBy([
+            (c) => OrderingTerm.asc(c.displayName),
+            (c) => OrderingTerm.desc(c.updatedAt),
+          ]))
+        .get();
+  }
+
+  Future<ContactEntry?> getContactByExternalId(String externalId) {
+    return (select(contactEntries)..where((c) => c.externalContactId.equals(externalId))).getSingleOrNull();
+  }
+
+  Future<ContactEntry?> getContactByNormalizedPhone(String normalizedPhone) {
+    return (select(contactEntries)..where((c) => c.normalizedPhone.equals(normalizedPhone))).getSingleOrNull();
+  }
+
+  Future<int> addContactEntry(ContactEntriesCompanion entry) => into(contactEntries).insert(entry);
+
+  Future<bool> updateContactEntry(ContactEntriesCompanion entry) =>
+      (update(contactEntries)..where((c) => c.id.equals(entry.id.value))).write(entry).then((rows) => rows > 0);
+
+  Future<int> deleteContactEntry(int id) => (delete(contactEntries)..where((c) => c.id.equals(id))).go();
 }

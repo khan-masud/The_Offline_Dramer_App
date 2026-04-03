@@ -31,6 +31,7 @@ class GreetingHeader extends ConsumerWidget {
     final now = DateTime.now();
     final profile = ref.watch(userProfileProvider);
     final dailyInfoAsync = ref.watch(dailyInfoProvider);
+    final profileImage = profile.imageProvider;
     
     final displayName = profile.name.trim().isEmpty ? 'Dreamer' : profile.name.trim();
     final initials = displayName.isEmpty ? 'D' : displayName.substring(0, 1).toUpperCase();
@@ -143,9 +144,9 @@ class GreetingHeader extends ConsumerWidget {
                         ),
                         padding: const EdgeInsets.all(2),
                         child: ClipOval(
-                          child: profile.photoUrl.isNotEmpty
-                              ? Image.network(
-                                  profile.photoUrl,
+                          child: profileImage != null
+                              ? Image(
+                                  image: profileImage,
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, __, ___) => _initialAvatar(initials),
                                 )
