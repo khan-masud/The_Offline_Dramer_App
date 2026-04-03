@@ -13,11 +13,13 @@ class BackupOperationResult {
   final bool success;
   final bool cancelled;
   final String message;
+  final String? filePath;
 
   const BackupOperationResult({
     required this.success,
     required this.cancelled,
     required this.message,
+    this.filePath,
   });
 }
 
@@ -49,6 +51,7 @@ class AppBackupService {
         success: true,
         cancelled: false,
         message: 'Backup saved: $savePath',
+        filePath: savePath,
       );
     } catch (e) {
       return BackupOperationResult(

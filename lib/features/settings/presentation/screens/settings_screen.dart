@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path/path.dart' as p;
+import 'package:share_plus/share_plus.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -208,7 +211,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   icon: Icons.info_outline_rounded,
                   iconColor: AppColors.teal,
                   title: 'Version',
-                  subtitle: '3.0.0',
+                  subtitle: '3.1.0',
                 ),
                 Divider(height: 1, color: theme.colorScheme.outline),
                 _SettingsTile(
@@ -609,10 +612,90 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(result.message)),
       );
+
+      if (result.success && !result.cancelled && !kIsWeb && result.filePath != null) {
+        await _showBackupActions(result.filePath!);
+      }
     } finally {
       if (mounted) {
         setState(() => _isBackupBusy = false);
       }
+    }
+  }
+
+  Future<void> _showBackupActions(String filePath) async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.insert_drive_file_outlined, color: AppColors.primary),
+                  title: const Text('Open Backup File'),
+                  subtitle: Text(filePath, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onTap: () async {
+                    Navigator.of(ctx).pop();
+                    await _openPath(filePath, errorPrefix: 'Open file failed');
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.folder_open_rounded, color: AppColors.info),
+                  title: const Text('Open Backup Folder'),
+                  subtitle: Text(p.dirname(filePath), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onTap: () async {
+                    Navigator.of(ctx).pop();
+                    await _openPath(p.dirname(filePath), errorPrefix: 'Open folder failed');
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.share_outlined, color: AppColors.success),
+                  title: const Text('Share Backup File'),
+                  onTap: () async {
+                    Navigator.of(ctx).pop();
+                    try {
+                      await Share.shareXFiles([XFile(filePath)], text: 'TOD backup file');
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Share failed: $e')),
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openPath(String targetPath, {required String errorPrefix}) async {
+    try {
+      final result = await OpenFilex.open(targetPath);
+      if (result.type != ResultType.done) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$errorPrefix: ${result.message}')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$errorPrefix: $e')),
+      );
     }
   }
 
