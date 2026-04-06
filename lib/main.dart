@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'core/services/incomplete_reminder_scheduler.dart';
 import 'core/services/notification_service.dart';
 import 'core/database/database_provider.dart';
 import 'providers/notification_preferences_provider.dart';
+import 'providers/profile_provider.dart';
 import 'app.dart';
 
 // Global navigator key to show dialogs from anywhere (like system share intent)
@@ -47,11 +51,85 @@ class _AppWithStartupTasks extends ConsumerStatefulWidget {
 }
 
 class _AppWithStartupTasksState extends ConsumerState<_AppWithStartupTasks> {
+  StreamSubscription<dynamic>? _todoWatcher;
+  StreamSubscription<dynamic>? _routineWatcher;
+  StreamSubscription<dynamic>? _routineItemWatcher;
+  StreamSubscription<dynamic>? _todayCompletionWatcher;
+  StreamSubscription<dynamic>? _habitWatcher;
+  StreamSubscription<dynamic>? _todayHabitCompletionWatcher;
+  Timer? _incompleteReminderDebounce;
+
   @override
   void initState() {
     super.initState();
     // Reschedule all routine notifications on app start
     _rescheduleNotificationsOnStartup();
+    _setupIncompleteReminderWatchers();
+  }
+
+  @override
+  void dispose() {
+    _incompleteReminderDebounce?.cancel();
+    _todoWatcher?.cancel();
+    _routineWatcher?.cancel();
+    _routineItemWatcher?.cancel();
+    _todayCompletionWatcher?.cancel();
+    _habitWatcher?.cancel();
+    _todayHabitCompletionWatcher?.cancel();
+    super.dispose();
+  }
+
+  void _setupIncompleteReminderWatchers() {
+    final db = ref.read(databaseProvider);
+
+    _todoWatcher = db.watchAllTodos().listen((_) {
+      _queueIncompleteReminderRefresh();
+    });
+    _routineWatcher = db.watchAllRoutines().listen((_) {
+      _queueIncompleteReminderRefresh();
+    });
+    _routineItemWatcher = db.watchAllRoutineItems().listen((_) {
+      _queueIncompleteReminderRefresh();
+    });
+    _todayCompletionWatcher = db.watchTodayCompletions().listen((_) {
+      _queueIncompleteReminderRefresh();
+    });
+    _habitWatcher = db.watchAllHabits().listen((_) {
+      _queueIncompleteReminderRefresh();
+    });
+    _todayHabitCompletionWatcher = db.watchTodayHabitCompletions().listen((_) {
+      _queueIncompleteReminderRefresh();
+    });
+  }
+
+  void _queueIncompleteReminderRefresh() {
+    _incompleteReminderDebounce?.cancel();
+    _incompleteReminderDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _refreshIncompleteReminderSchedule(),
+    );
+  }
+
+  Future<void> _refreshIncompleteReminderSchedule() async {
+    if (!mounted) return;
+
+    try {
+      final db = ref.read(databaseProvider);
+      final prefs = ref.read(notificationPreferencesProvider);
+      final profile = ref.read(userProfileProvider);
+      final notif = NotificationService();
+
+      await IncompleteReminderScheduler.refresh(
+        db: db,
+        notification: notif,
+        userName: profile.name,
+        globalReminderTime: prefs.routineReminderTime,
+        intervalHours: prefs.incompleteReminderIntervalHours,
+        alertMode: prefs.alertMode,
+      );
+    } catch (e) {
+      debugPrint('Incomplete reminder refresh error: $e');
+    }
   }
 
   Future<void> _rescheduleNotificationsOnStartup() async {
@@ -62,10 +140,13 @@ class _AppWithStartupTasksState extends ConsumerState<_AppWithStartupTasks> {
 
       final db = ref.read(databaseProvider);
       final prefs = ref.read(notificationPreferencesProvider);
+      final profile = ref.read(userProfileProvider);
       final notif = NotificationService();
 
       final routines = await db.getAllRoutines();
       final birthdays = await db.getAllBirthdays();
+      final todos = await db.watchAllTodos().first;
+      final habits = await db.watchAllHabits().first;
       final reminderInfos = routines.map((r) {
         final days = r.days.split(',').map((d) => int.tryParse(d)).whereType<int>().toList();
         final reminderTimes = <TimeOfDay>[];
@@ -109,6 +190,25 @@ class _AppWithStartupTasksState extends ConsumerState<_AppWithStartupTasks> {
 
       await notif.rescheduleAllBirthdayReminders(
         birthdays: birthdays,
+        alertMode: prefs.alertMode,
+      );
+
+      await notif.rescheduleAllTodoReminders(
+        todos: todos,
+        alertMode: prefs.alertMode,
+      );
+
+      await notif.rescheduleAllHabitReminders(
+        habits: habits,
+        alertMode: prefs.alertMode,
+      );
+
+      await IncompleteReminderScheduler.refresh(
+        db: db,
+        notification: notif,
+        userName: profile.name,
+        globalReminderTime: prefs.routineReminderTime,
+        intervalHours: prefs.incompleteReminderIntervalHours,
         alertMode: prefs.alertMode,
       );
     } catch (e) {

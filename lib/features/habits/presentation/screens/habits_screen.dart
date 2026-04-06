@@ -112,6 +112,7 @@ class HabitsScreen extends ConsumerWidget {
                             onDelete: () {
                               final itemKey = 'habit_${habit.id}';
                               final db = ref.read(databaseProvider);
+                              final notif = ref.read(notificationServiceProvider);
                               final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
                               final messenger = ScaffoldMessenger.of(context);
                               
@@ -119,9 +120,10 @@ class HabitsScreen extends ConsumerWidget {
                               messenger.clearSnackBars();
                               
                               bool undone = false;
-                              final timer = Timer(const Duration(seconds: 5), () {
+                              final timer = Timer(const Duration(seconds: 5), () async {
                                 if (!undone) {
-                                  db.deleteHabit(habit.id);
+                                  await notif.cancelHabitReminders(habit.id);
+                                  await db.deleteHabit(habit.id);
                                   hiddenNotifier.update((state) {
                                     final s = {...state};
                                     s.remove(itemKey);

@@ -24,12 +24,15 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen> {
   final TextEditingController _searchCtrl = TextEditingController();
   bool _isSyncing = false;
   String? _lastSyncText;
+  String? _lastSyncSummary;
 
   @override
   void initState() {
     super.initState();
+    // Ensure stale search text from previous visits does not hide existing contacts.
+    ref.read(contactSearchProvider.notifier).state = '';
+    _searchCtrl.clear();
     _loadLastSync();
-    Future.microtask(_autoSyncIfDue);
   }
 
   @override
@@ -52,7 +55,7 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen> {
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.sync_rounded),
             tooltip: 'Sync now',
-            onPressed: _isSyncing ? null : () => _syncNow(force: true),
+            onPressed: _isSyncing ? null : _syncNow,
           ),
         ],
       ),
@@ -80,6 +83,34 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen> {
                 ),
               ),
             ),
+          if (_lastSyncSummary != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _lastSyncSummary!,
+                  style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isSyncing ? null : _syncNow,
+                icon: _isSyncing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.sync_rounded),
+                label: Text(_isSyncing ? 'Syncing contacts...' : 'Sync Contacts'),
+              ),
+            ),
+          ),
           const SizedBox(height: 8),
           Expanded(
             child: contactsAsync.when(
@@ -102,7 +133,7 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen> {
                           const SizedBox(height: 14),
                           Text('No contacts yet', style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurface)),
                           const SizedBox(height: 6),
-                          Text('Use + to add manually or tap sync to import phone contacts', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant), textAlign: TextAlign.center),
+                          Text('Use + to add manually or tap Sync Contacts to import phone contacts', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant), textAlign: TextAlign.center),
                         ],
                       ),
                     ),
@@ -194,29 +225,38 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen> {
     setState(() => _lastSyncText = 'Last sync: ${DateFormat('dd MMM yyyy, hh:mm a').format(dt)}');
   }
 
-  Future<void> _autoSyncIfDue() async {
-    await _syncNow(force: false);
-  }
-
-  Future<void> _syncNow({required bool force}) async {
+  Future<void> _syncNow() async {
     if (_isSyncing) return;
     setState(() => _isSyncing = true);
 
     try {
       final db = ref.read(databaseProvider);
       final service = ContactSyncService(db);
-      final added = force ? await service.syncNow() : await service.syncIfDue();
+      final report = await service.syncNowWithReport();
+      final summaryText =
+          'Total contacts scanned: ${report.totalContactsScanned}, phone entries: ${report.totalPhoneEntries}, new imported: ${report.newImported}, in app: ${report.totalInAppContacts}';
       ref.invalidate(contactEntriesProvider);
+      if (mounted) {
+        setState(() => _lastSyncSummary = summaryText);
+      }
       await _loadLastSync();
       if (!mounted) return;
 
-      if (added > 0) {
+      if (report.newImported > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$added new contact(s) imported from phone')),
+          SnackBar(content: Text('${report.newImported} new contact(s) imported from phone\n$summaryText')),
         );
-      } else if (force) {
+      } else if (report.status == ContactSyncService.permissionDenied) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No new contacts found')),
+          SnackBar(content: Text('Contact permission is required to sync phone contacts\n$summaryText')),
+        );
+      } else if (report.status == ContactSyncService.noDeviceContacts) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No contacts found on this device\n$summaryText')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No new contacts found\n$summaryText')),
         );
       }
     } finally {

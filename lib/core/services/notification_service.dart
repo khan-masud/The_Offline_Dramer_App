@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
@@ -25,14 +26,22 @@ class NotificationService {
   bool _isInitialized = false;
 
   static const _welcomeShownKey = 'notif_welcomed';
+  static const _profileNameKey = 'profile_name';
   static const _globalDailyReminderId = 700000;
+  static const _dailyRoutineDigestId = 705000;
+  static const _dailyTodoDigestId = 705001;
+  static const _welcomeNotificationId = 705099;
+  static const _incompleteFollowUpBaseId = 710000;
+  static const _maxIncompleteFollowUpsPerDay = 24;
   static const _birthdayBaseId = 800000;
+  static const _channelVersion = 2;
 
   Future<void> init() async {
     if (_isInitialized || kIsWeb) return;
 
     try {
       tz.initializeTimeZones();
+      await _configureLocalTimeZone();
 
       const AndroidInitializationSettings initializationSettingsAndroid =
           AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -53,6 +62,16 @@ class NotificationService {
       _isInitialized = true;
     } catch (e) {
       debugPrint('Notification init error: $e');
+    }
+  }
+
+  Future<void> _configureLocalTimeZone() async {
+    try {
+      final timeZoneName = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(timeZoneName));
+    } catch (e) {
+      // Keep default timezone if device timezone cannot be resolved.
+      debugPrint('Timezone setup warning: $e');
     }
   }
 
@@ -88,7 +107,7 @@ class NotificationService {
         final alreadyShown = prefs.getBool(_welcomeShownKey) ?? false;
         if (!alreadyShown) {
           await _notificationsPlugin.show(
-            id: _globalDailyReminderId + 1,
+            id: _welcomeNotificationId,
             title: 'Welcome to TOD',
             body: 'Notifications are ready. You will only see this once.',
             notificationDetails: const NotificationDetails(
@@ -121,16 +140,32 @@ class NotificationService {
     if (scheduledDate.isBefore(DateTime.now())) return;
 
     try {
+      final localScheduledDate = tz.TZDateTime(
+        tz.local,
+        scheduledDate.year,
+        scheduledDate.month,
+        scheduledDate.day,
+        scheduledDate.hour,
+        scheduledDate.minute,
+      );
+      final profileName = await _loadProfileName();
+      final reminderTitle =
+          _buildGreetingTitle(profileName, localScheduledDate.hour);
+      final reminderBody = _buildPendingTaskNoticeBody(
+        _deriveTaskName(title: title, body: body),
+      );
+
       await _notificationsPlugin.zonedSchedule(
         id: id,
-        title: title,
-        body: body,
-        scheduledDate: tz.TZDateTime.from(scheduledDate, tz.local),
+        title: reminderTitle,
+        body: reminderBody,
+        scheduledDate: localScheduledDate,
         notificationDetails: _buildDetails(
           channelBaseId: 'todo_reminders',
           channelBaseName: 'Todo Reminders',
           channelDescription: 'Reminders for your upcoming tasks',
           alertMode: alertMode,
+          expandedText: reminderBody,
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       );
@@ -173,6 +208,8 @@ class NotificationService {
 
     final validDays = daysOfWeek.where((d) => d >= 1 && d <= 7).toList();
     if (validDays.isEmpty || reminderTimes.isEmpty) return;
+    final profileName = await _loadProfileName();
+    final pendingTaskName = _deriveTaskName(title: title, body: body);
 
     for (int reminderIndex = 0;
         reminderIndex < reminderTimes.length;
@@ -187,18 +224,23 @@ class NotificationService {
         );
         final scheduledDate =
             _nextInstanceOfDayAt(day, reminder.hour, reminder.minute);
+        final reminderTitle =
+            _buildGreetingTitle(profileName, scheduledDate.hour);
+        final reminderBody =
+            _buildPendingTaskNoticeBody(pendingTaskName);
 
         try {
           await _notificationsPlugin.zonedSchedule(
             id: uniqueId,
-            title: title,
-            body: body,
+            title: reminderTitle,
+            body: reminderBody,
             scheduledDate: scheduledDate,
             notificationDetails: _buildDetails(
               channelBaseId: 'routine_reminders',
               channelBaseName: 'Routine Reminders',
               channelDescription: 'Reminders for your routines',
               alertMode: alertMode,
+              expandedText: reminderBody,
             ),
             androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
             matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
@@ -235,6 +277,7 @@ class NotificationService {
           channelBaseName: 'Daily Routine Reminder',
           channelDescription: 'Global daily reminder for TOD',
           alertMode: alertMode,
+          expandedText: 'Check your routines and plan your day.',
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.time,
@@ -253,6 +296,277 @@ class NotificationService {
     }
   }
 
+  Future<void> scheduleDailyTaskDigestReminders({
+    required TimeOfDay time,
+    required String userName,
+    required List<String> routineTaskTitles,
+    required List<String> todoTaskTitles,
+    ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
+  }) async {
+    if (kIsWeb || !_isInitialized) return;
+
+    await cancelDailyTaskDigestReminders();
+
+    final greetingName = _sanitizeNotificationName(userName);
+    final greetingTitle = _buildGreetingTitle(greetingName, time.hour);
+
+    if (routineTaskTitles.isNotEmpty) {
+      final routineBody = _buildDigestBody(
+        heading: "Your today's routine tasks:",
+        tasks: routineTaskTitles,
+      );
+      await _scheduleDailyDigestNotification(
+        notificationId: _dailyRoutineDigestId,
+        time: time,
+        title: greetingTitle,
+        body: routineBody,
+        channelBaseId: 'daily_routine_digest',
+        channelBaseName: 'Daily Routine Digest',
+        channelDescription: 'Combined morning summary of routine tasks',
+        alertMode: alertMode,
+      );
+    }
+
+    if (todoTaskTitles.isNotEmpty) {
+      final todoBody = _buildDigestBody(
+        heading: "Your today's task list:",
+        tasks: todoTaskTitles,
+      );
+      await _scheduleDailyDigestNotification(
+        notificationId: _dailyTodoDigestId,
+        time: time,
+        title: greetingTitle,
+        body: todoBody,
+        channelBaseId: 'daily_todo_digest',
+        channelBaseName: 'Daily Todo Digest',
+        channelDescription: 'Combined morning summary of todo tasks',
+        alertMode: alertMode,
+      );
+    }
+  }
+
+  Future<void> cancelDailyTaskDigestReminders() async {
+    if (kIsWeb) return;
+    try {
+      await _notificationsPlugin.cancel(id: _dailyRoutineDigestId);
+      await _notificationsPlugin.cancel(id: _dailyTodoDigestId);
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Future<void> _scheduleDailyDigestNotification({
+    required int notificationId,
+    required TimeOfDay time,
+    required String title,
+    required String body,
+    required String channelBaseId,
+    required String channelBaseName,
+    required String channelDescription,
+    required ReminderAlertMode alertMode,
+  }) async {
+    final now = tz.TZDateTime.now(tz.local);
+    var scheduled =
+        tz.TZDateTime(tz.local, now.year, now.month, now.day, time.hour, time.minute);
+    if (!scheduled.isAfter(now)) {
+      scheduled = scheduled.add(const Duration(days: 1));
+    }
+
+    try {
+      await _notificationsPlugin.zonedSchedule(
+        id: notificationId,
+        title: title,
+        body: body,
+        scheduledDate: scheduled,
+        notificationDetails: _buildDetails(
+          channelBaseId: channelBaseId,
+          channelBaseName: channelBaseName,
+          channelDescription: channelDescription,
+          alertMode: alertMode,
+          expandedText: body,
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    } catch (e) {
+      debugPrint('Daily digest schedule error: $e');
+    }
+  }
+
+  String _sanitizeNotificationName(String raw) {
+    final normalized = raw.trim();
+    if (normalized.isEmpty) return 'Dreamer';
+    return normalized;
+  }
+
+  String _buildDigestBody({
+    required String heading,
+    required List<String> tasks,
+  }) {
+    final normalizedTasks = tasks
+        .map((task) => task.trim())
+        .where((task) => task.isNotEmpty)
+        .toList();
+
+    if (normalizedTasks.isEmpty) {
+      return '$heading\nNo pending tasks for now.';
+    }
+
+    const maxVisibleItems = 18;
+    final visible = normalizedTasks.take(maxVisibleItems).toList();
+    final hiddenCount = normalizedTasks.length - visible.length;
+
+    final buffer = StringBuffer('$heading\n');
+    for (int i = 0; i < visible.length; i++) {
+      buffer.writeln('${i + 1}. ${visible[i]}');
+    }
+
+    if (hiddenCount > 0) {
+      buffer.write('+ $hiddenCount more item(s)...');
+    }
+
+    return buffer.toString().trimRight();
+  }
+
+  Future<void> scheduleIncompleteWorkFollowUpReminders({
+    required int pendingTodoCount,
+    required int pendingRoutineItemCount,
+    required int pendingHabitCount,
+    required List<String> pendingTaskNames,
+    required TimeOfDay startTime,
+    required int intervalHours,
+    ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
+  }) async {
+    if (kIsWeb || !_isInitialized) return;
+
+    final safeIntervalHours = intervalHours < 1
+        ? 1
+        : (intervalHours > 12 ? 12 : intervalHours);
+    final profileName = await _loadProfileName();
+    final normalizedPendingTaskNames = pendingTaskNames
+      .map((name) => name.trim())
+      .where((name) => name.isNotEmpty)
+      .toList();
+
+    await cancelIncompleteWorkFollowUpReminders();
+
+    final totalPending =
+      pendingTodoCount + pendingRoutineItemCount + pendingHabitCount;
+    if (totalPending <= 0) return;
+
+    final now = tz.TZDateTime.now(tz.local);
+    var nextSlot = tz.TZDateTime(
+      tz.local,
+      now.year,
+      now.month,
+      now.day,
+      startTime.hour,
+      startTime.minute,
+    );
+
+    if (!nextSlot.isAfter(now)) {
+      final elapsedMinutes = now.difference(nextSlot).inMinutes;
+      final stepMinutes = safeIntervalHours * 60;
+      final nextStep = (elapsedMinutes ~/ stepMinutes) + 1;
+      nextSlot = nextSlot.add(Duration(minutes: nextStep * stepMinutes));
+    }
+
+    int slotIndex = 0;
+    while (nextSlot.year == now.year &&
+        nextSlot.month == now.month &&
+        nextSlot.day == now.day &&
+        slotIndex < _maxIncompleteFollowUpsPerDay) {
+      final reminderTitle = _buildGreetingTitle(profileName, nextSlot.hour);
+      final followUpBody = _buildPendingWorkNoticeBody(
+        pendingTaskNames: normalizedPendingTaskNames,
+        pendingTodoCount: pendingTodoCount,
+        pendingRoutineItemCount: pendingRoutineItemCount,
+        pendingHabitCount: pendingHabitCount,
+      );
+
+      try {
+        await _notificationsPlugin.zonedSchedule(
+          id: _incompleteFollowUpNotificationId(slotIndex),
+          title: reminderTitle,
+          body: followUpBody,
+          scheduledDate: nextSlot,
+          notificationDetails: _buildDetails(
+            channelBaseId: 'incomplete_followup_reminders',
+            channelBaseName: 'Incomplete Follow-up Reminders',
+            channelDescription:
+              'Repeated reminders for incomplete tasks, routines, and habits',
+            alertMode: alertMode,
+            expandedText: followUpBody,
+          ),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        );
+      } catch (e) {
+        debugPrint('Incomplete follow-up schedule error: $e');
+      }
+
+      slotIndex++;
+      nextSlot = nextSlot.add(Duration(hours: safeIntervalHours));
+    }
+  }
+
+  Future<void> cancelIncompleteWorkFollowUpReminders() async {
+    if (kIsWeb) return;
+    try {
+      for (int i = 0; i < _maxIncompleteFollowUpsPerDay; i++) {
+        await _notificationsPlugin.cancel(id: _incompleteFollowUpNotificationId(i));
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  String _fallbackPendingTaskName({
+    required int pendingTodoCount,
+    required int pendingRoutineItemCount,
+    required int pendingHabitCount,
+  }) {
+    final totalPending =
+        pendingTodoCount + pendingRoutineItemCount + pendingHabitCount;
+    if (totalPending <= 0) return 'pending work';
+    if (totalPending == 1 && pendingTodoCount == 1) return 'task';
+    if (totalPending == 1 && pendingRoutineItemCount == 1) return 'routine task';
+    if (totalPending == 1 && pendingHabitCount == 1) return 'habit';
+    return 'multiple pending tasks';
+  }
+
+  String _buildPendingWorkNoticeBody({
+    required List<String> pendingTaskNames,
+    required int pendingTodoCount,
+    required int pendingRoutineItemCount,
+    required int pendingHabitCount,
+  }) {
+    if (pendingTaskNames.length <= 1) {
+      final singleName = pendingTaskNames.isNotEmpty
+          ? pendingTaskNames.first
+          : _fallbackPendingTaskName(
+              pendingTodoCount: pendingTodoCount,
+              pendingRoutineItemCount: pendingRoutineItemCount,
+              pendingHabitCount: pendingHabitCount,
+            );
+      return _buildPendingTaskNoticeBody(singleName);
+    }
+
+    const maxVisibleItems = 12;
+    final visible = pendingTaskNames.take(maxVisibleItems).toList();
+    final hiddenCount = pendingTaskNames.length - visible.length;
+
+    final buffer = StringBuffer('You have pending tasks:\n');
+    for (int i = 0; i < visible.length; i++) {
+      buffer.writeln('${i + 1}. ${visible[i]}');
+    }
+    if (hiddenCount > 0) {
+      buffer.writeln('+ $hiddenCount more task(s)...');
+    }
+    buffer.write('\nPlease complete them in time');
+
+    return buffer.toString().trimRight();
+  }
+
   Future<void> scheduleHabitReminder({
     required int habitId,
     required String title,
@@ -263,21 +577,30 @@ class NotificationService {
   }) async {
     if (kIsWeb || !_isInitialized) return;
 
+    await cancelHabitReminders(habitId);
+    final profileName = await _loadProfileName();
+    final pendingTaskName = _deriveTaskName(title: title, body: body);
+
     for (int day = 1; day <= 7; day++) {
-      final uniqueId = int.parse('20$habitId$day');
+      final uniqueId = _habitNotificationId(habitId, day);
       tz.TZDateTime scheduledDate = _nextInstanceOfDayAt(day, hour, minute);
+      final reminderTitle =
+          _buildGreetingTitle(profileName, scheduledDate.hour);
+      final reminderBody =
+          _buildPendingTaskNoticeBody(pendingTaskName);
 
       try {
         await _notificationsPlugin.zonedSchedule(
           id: uniqueId,
-          title: title,
-          body: body,
+          title: reminderTitle,
+          body: reminderBody,
           scheduledDate: scheduledDate,
           notificationDetails: _buildDetails(
             channelBaseId: 'habit_reminders',
             channelBaseName: 'Habit Reminders',
             channelDescription: 'Reminders for your daily habits',
             alertMode: alertMode,
+            expandedText: reminderBody,
           ),
           androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
           matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
@@ -333,6 +656,7 @@ class NotificationService {
           channelBaseName: 'Birthday Reminders',
           channelDescription: 'Reminders for saved birthdays',
           alertMode: alertMode,
+          expandedText: '$personName has a birthday tomorrow.',
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.dateAndTime,
@@ -369,6 +693,7 @@ class NotificationService {
           channelBaseName: 'Birthday Reminders',
           channelDescription: 'Reminders for saved birthdays',
           alertMode: alertMode,
+          expandedText: 'Today is $personName\'s birthday.',
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.dateAndTime,
@@ -415,23 +740,86 @@ class NotificationService {
     required String channelBaseName,
     required String channelDescription,
     required ReminderAlertMode alertMode,
+    String? expandedText,
   }) {
     final playSound =
         alertMode == ReminderAlertMode.ring || alertMode == ReminderAlertMode.ringAndVibration;
     final enableVibration =
         alertMode == ReminderAlertMode.vibration || alertMode == ReminderAlertMode.ringAndVibration;
+    final vibrationPattern = enableVibration
+        ? Int64List.fromList(const <int>[0, 300, 200, 450])
+        : null;
+    final channelId =
+        '${channelBaseId}_${alertMode.name}_v$_channelVersion';
 
     return NotificationDetails(
       android: AndroidNotificationDetails(
-        '${channelBaseId}_${alertMode.name}',
+        channelId,
         '$channelBaseName (${_modeLabel(alertMode)})',
         channelDescription: channelDescription,
         importance: Importance.high,
         priority: Priority.high,
         playSound: playSound,
         enableVibration: enableVibration,
+        vibrationPattern: vibrationPattern,
+        styleInformation: expandedText == null
+            ? null
+            : BigTextStyleInformation(expandedText),
       ),
     );
+  }
+
+  Future<String> _loadProfileName() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_profileNameKey) ?? '';
+      final normalized = raw.trim();
+      if (normalized.isNotEmpty) return normalized;
+    } catch (_) {
+      // ignore
+    }
+    return 'Dreamer';
+  }
+
+  String _buildGreetingTitle(String userName, int hour) {
+    final safeName = _sanitizeNotificationName(userName);
+    return 'Hey $safeName, ${_timeGreetingByHour(hour)}';
+  }
+
+  String _timeGreetingByHour(int hour) {
+    if (hour < 12) return 'Good Morning';
+    if (hour < 14) return 'Good Noon';
+    if (hour < 18) return 'Good Afternoon';
+    return 'Good Night';
+  }
+
+  String _buildPendingTaskNoticeBody(String taskName) {
+    final normalizedTask = taskName.trim().isEmpty ? 'Task' : taskName.trim();
+    return 'You have a pending task: $normalizedTask\n\nPlease complete it in time';
+  }
+
+  String _deriveTaskName({
+    required String title,
+    required String body,
+  }) {
+    final trimmedTitle = title.trim();
+    final trimmedBody = body.trim();
+
+    for (final prefix in const <String>['Routine: ', 'Habit Reminder: ', 'Todo Reminder: ']) {
+      if (trimmedTitle.startsWith(prefix)) {
+        final extracted = trimmedTitle.substring(prefix.length).trim();
+        if (extracted.isNotEmpty) return extracted;
+      }
+    }
+
+    if (trimmedBody.isNotEmpty &&
+        !trimmedBody.toLowerCase().contains('time to') &&
+        !trimmedBody.toLowerCase().contains('track')) {
+      return trimmedBody;
+    }
+
+    if (trimmedTitle.isNotEmpty) return trimmedTitle;
+    return 'Task';
   }
 
   String _modeLabel(ReminderAlertMode mode) {
@@ -472,6 +860,23 @@ class NotificationService {
     }
   }
 
+  Future<void> cancelHabitReminders(int habitId) async {
+    if (kIsWeb) return;
+    try {
+      for (int day = 1; day <= 7; day++) {
+        await _notificationsPlugin.cancel(id: _habitNotificationId(habitId, day));
+
+        // Cleanup legacy IDs used in previous app versions.
+        final legacyId = int.tryParse('20$habitId$day');
+        if (legacyId != null) {
+          await _notificationsPlugin.cancel(id: legacyId);
+        }
+      }
+    } catch (_) {
+      // ignore
+    }
+  }
+
   Future<void> cancelAll() async {
     if (kIsWeb) return;
     try {
@@ -488,11 +893,6 @@ class NotificationService {
     required ReminderAlertMode alertMode,
   }) async {
     if (kIsWeb || !_isInitialized) return;
-
-    await scheduleGlobalDailyReminder(
-      time: globalReminderTime,
-      alertMode: alertMode,
-    );
 
     for (final routine in routines) {
       await cancelRoutineReminders(routine.id);
@@ -519,6 +919,65 @@ class NotificationService {
     }
   }
 
+  Future<void> rescheduleAllTodoReminders({
+    required List<Todo> todos,
+    required ReminderAlertMode alertMode,
+  }) async {
+    if (kIsWeb || !_isInitialized) return;
+
+    final now = DateTime.now();
+    for (final todo in todos) {
+      await cancelReminder(todo.id);
+
+      if (todo.isCompleted) continue;
+      if (todo.remindAt == null) continue;
+      if (!todo.remindAt!.isAfter(now)) continue;
+
+      await scheduleTodoReminder(
+        id: todo.id,
+        title: 'Todo Reminder',
+        body: todo.title,
+        scheduledDate: todo.remindAt!,
+        alertMode: alertMode,
+      );
+    }
+  }
+
+  Future<void> rescheduleAllHabitReminders({
+    required List<Habit> habits,
+    required ReminderAlertMode alertMode,
+  }) async {
+    if (kIsWeb || !_isInitialized) return;
+
+    for (final habit in habits) {
+      await cancelHabitReminders(habit.id);
+      final reminder = _parseTimeOfDay(habit.reminderTime);
+      if (reminder == null) continue;
+
+      await scheduleHabitReminder(
+        habitId: habit.id,
+        title: 'Habit Reminder: ${habit.title}',
+        body: 'Time to keep your ${habit.emoji} habit on track!',
+        hour: reminder.hour,
+        minute: reminder.minute,
+        alertMode: alertMode,
+      );
+    }
+  }
+
+  TimeOfDay? _parseTimeOfDay(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final parts = raw.split(':');
+    if (parts.length != 2) return null;
+
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+
+    return TimeOfDay(hour: hour, minute: minute);
+  }
+
   int _routineNotificationId({
     required int routineId,
     required int reminderIndex,
@@ -529,6 +988,14 @@ class NotificationService {
 
   int _birthdayNotificationId(int birthdayId, int type) {
     return _birthdayBaseId + (birthdayId * 10) + type;
+  }
+
+  int _incompleteFollowUpNotificationId(int slotIndex) {
+    return _incompleteFollowUpBaseId + slotIndex;
+  }
+
+  int _habitNotificationId(int habitId, int day) {
+    return 2000000 + (habitId * 10) + day;
   }
 }
 

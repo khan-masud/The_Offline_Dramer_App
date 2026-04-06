@@ -7,22 +7,27 @@ enum ReminderAlertMode { ring, ringAndVibration, vibration, silent }
 class NotificationPreferencesState {
   final TimeOfDay routineReminderTime;
   final ReminderAlertMode alertMode;
+  final int incompleteReminderIntervalHours;
   final bool isLoading;
 
   const NotificationPreferencesState({
     this.routineReminderTime = const TimeOfDay(hour: 7, minute: 0),
     this.alertMode = ReminderAlertMode.ringAndVibration,
+    this.incompleteReminderIntervalHours = 3,
     this.isLoading = true,
   });
 
   NotificationPreferencesState copyWith({
     TimeOfDay? routineReminderTime,
     ReminderAlertMode? alertMode,
+    int? incompleteReminderIntervalHours,
     bool? isLoading,
   }) {
     return NotificationPreferencesState(
       routineReminderTime: routineReminderTime ?? this.routineReminderTime,
       alertMode: alertMode ?? this.alertMode,
+      incompleteReminderIntervalHours:
+          incompleteReminderIntervalHours ?? this.incompleteReminderIntervalHours,
       isLoading: isLoading ?? this.isLoading,
     );
   }
@@ -41,12 +46,18 @@ class NotificationPreferencesNotifier extends StateNotifier<NotificationPreferen
   static const _hourKey = 'routine_reminder_hour';
   static const _minuteKey = 'routine_reminder_minute';
   static const _alertModeKey = 'notification_alert_mode';
+  static const _incompleteIntervalHoursKey =
+      'incomplete_reminder_interval_hours';
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     final hour = prefs.getInt(_hourKey) ?? 7;
     final minute = prefs.getInt(_minuteKey) ?? 0;
     final modeName = prefs.getString(_alertModeKey);
+    final savedInterval = prefs.getInt(_incompleteIntervalHoursKey) ?? 3;
+    final intervalHours = savedInterval < 1
+        ? 1
+        : (savedInterval > 12 ? 12 : savedInterval);
     final mode = ReminderAlertMode.values.firstWhere(
       (m) => m.name == modeName,
       orElse: () => ReminderAlertMode.ringAndVibration,
@@ -55,6 +66,7 @@ class NotificationPreferencesNotifier extends StateNotifier<NotificationPreferen
     state = state.copyWith(
       routineReminderTime: TimeOfDay(hour: hour, minute: minute),
       alertMode: mode,
+      incompleteReminderIntervalHours: intervalHours,
       isLoading: false,
     );
   }
@@ -70,5 +82,12 @@ class NotificationPreferencesNotifier extends StateNotifier<NotificationPreferen
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_alertModeKey, mode.name);
     state = state.copyWith(alertMode: mode);
+  }
+
+  Future<void> setIncompleteReminderIntervalHours(int hours) async {
+    final safeHours = hours < 1 ? 1 : (hours > 12 ? 12 : hours);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_incompleteIntervalHoursKey, safeHours);
+    state = state.copyWith(incompleteReminderIntervalHours: safeHours);
   }
 }

@@ -1,17 +1,19 @@
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
 
 Future<String?> saveBackupFile(Uint8List bytes, String fileName) async {
-  final docDir = await getApplicationDocumentsDirectory();
-  final backupDir = Directory(p.join(docDir.path, 'backups'));
-  if (!backupDir.existsSync()) {
-    backupDir.createSync(recursive: true);
+  final savedPath = await FilePicker.platform.saveFile(
+    dialogTitle: 'Select where to save backup',
+    fileName: fileName,
+    type: FileType.custom,
+    allowedExtensions: const ['todbackup'],
+    bytes: bytes,
+  );
+
+  if (savedPath == null || savedPath.trim().isEmpty) {
+    return null;
   }
 
-  final file = File(p.join(backupDir.path, fileName));
-  await file.writeAsBytes(bytes, flush: true);
-  return file.path;
+  return savedPath;
 }

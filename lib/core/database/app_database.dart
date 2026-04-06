@@ -399,6 +399,15 @@ class AppDatabase extends _$AppDatabase {
         ])
       ).watch();
 
+  Stream<List<RoutineItem>> watchAllRoutineItems() =>
+      (select(routineItems)
+        ..orderBy([
+          (ri) => OrderingTerm.asc(ri.routineId),
+          (ri) => OrderingTerm.desc(ri.priority),
+          (ri) => OrderingTerm.asc(ri.sortOrder),
+          (ri) => OrderingTerm.asc(ri.id),
+        ])).watch();
+
   Future<int> addRoutineItem(RoutineItemsCompanion entry) => into(routineItems).insert(entry);
 
   Future<bool> updateRoutineItem(RoutineItemsCompanion entry) =>

@@ -16,6 +16,7 @@ import '../../../../providers/profile_provider.dart';
 import '../../../../providers/notification_preferences_provider.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/services/backup_service.dart';
+import '../../../../core/services/incomplete_reminder_scheduler.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../auth/presentation/screens/pin_setup_screen.dart';
 
@@ -41,6 +42,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final reminderTimeText = MaterialLocalizations.of(context).formatTimeOfDay(
       notificationPrefs.routineReminderTime,
       alwaysUse24HourFormat: MediaQuery.of(context).alwaysUse24HourFormat,
+    );
+    final incompleteIntervalText = _incompleteIntervalLabel(
+      notificationPrefs.incompleteReminderIntervalHours,
     );
 
     return Scaffold(
@@ -159,6 +163,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
                   onTap: () => _pickAlertMode(context),
                 ),
+                Divider(height: 1, color: theme.colorScheme.outline),
+                _SettingsTile(
+                  icon: Icons.repeat_rounded,
+                  iconColor: AppColors.info,
+                  title: 'Incomplete Reminder Repeat',
+                  subtitle: incompleteIntervalText,
+                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  onTap: () => _pickIncompleteReminderInterval(context),
+                ),
               ],
             ),
           ),
@@ -211,7 +224,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   icon: Icons.info_outline_rounded,
                   iconColor: AppColors.teal,
                   title: 'Version',
-                  subtitle: '3.1.0',
+                  subtitle: '3.2.1',
                 ),
                 Divider(height: 1, color: theme.colorScheme.outline),
                 _SettingsTile(
@@ -297,7 +310,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               right: 0,
                               child: GestureDetector(
                                 onTap: () async {
-                                  final cropped = await _pickAndCropImage(this.context);
+                                  final cropped = await _pickAndCropImage(context);
                                   if (cropped != null) {
                                     setSheetState(() {
                                       pickedImage = cropped.file;
@@ -423,6 +436,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return (file: photo, bytes: originalBytes);
     }
 
+    final selectedStyleForAndroid =
+        defaultTargetPlatform == TargetPlatform.android
+            ? CropStyle.rectangle
+            : cropStyle;
+
     try {
       final cropped = await ImageCropper().cropImage(
         sourcePath: photo.path,
@@ -433,7 +451,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             toolbarTitle: 'Crop Profile Photo',
             hideBottomControls: true,
             lockAspectRatio: true,
-            cropStyle: cropStyle,
+            cropStyle: selectedStyleForAndroid,
           ),
           IOSUiSettings(
             title: 'Crop Profile Photo',
@@ -488,6 +506,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       case ReminderAlertMode.silent:
         return 'Silent';
     }
+  }
+
+  String _incompleteIntervalLabel(int hours) {
+    return hours == 1 ? 'Every 1 hour' : 'Every $hours hours';
   }
 
   Future<void> _pickDailyReminderTime(BuildContext context) async {
@@ -548,17 +570,67 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Future<void> _pickIncompleteReminderInterval(BuildContext context) async {
+    final current =
+        ref.read(notificationPreferencesProvider).incompleteReminderIntervalHours;
+    const options = <int>[1, 2, 3, 4, 6, 8, 12];
+
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: options.map((hours) {
+                final isSelected = current == hours;
+                return ListTile(
+                  leading: Icon(
+                    isSelected
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_off,
+                    color: isSelected
+                        ? AppColors.primary
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                  title: Text(_incompleteIntervalLabel(hours)),
+                  onTap: () => Navigator.pop(ctx, hours),
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected == null || selected == current) return;
+
+    await ref
+        .read(notificationPreferencesProvider.notifier)
+        .setIncompleteReminderIntervalHours(selected);
+    await _rescheduleRoutineReminders();
+    if (!mounted) return;
+    ScaffoldMessenger.of(this.context).showSnackBar(
+      SnackBar(content: Text('Incomplete reminder interval set to ${_incompleteIntervalLabel(selected)}')),
+    );
+  }
+
   Future<void> _rescheduleRoutineReminders() async {
     final db = ref.read(databaseProvider);
     final notification = ref.read(notificationServiceProvider);
     final prefs = ref.read(notificationPreferencesProvider);
+    final profile = ref.read(userProfileProvider);
     final routines = await db.getAllRoutines();
     final birthdays = await db.getAllBirthdays();
-
-    await notification.scheduleGlobalDailyReminder(
-      time: prefs.routineReminderTime,
-      alertMode: prefs.alertMode,
-    );
+    final todos = await db.watchAllTodos().first;
+    final habits = await db.watchAllHabits().first;
 
     for (final routine in routines) {
       await notification.cancelRoutineReminders(routine.id);
@@ -600,6 +672,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       birthdays: birthdays,
       alertMode: prefs.alertMode,
     );
+
+    await notification.rescheduleAllTodoReminders(
+      todos: todos,
+      alertMode: prefs.alertMode,
+    );
+
+    await notification.rescheduleAllHabitReminders(
+      habits: habits,
+      alertMode: prefs.alertMode,
+    );
+
+    await IncompleteReminderScheduler.refresh(
+      db: db,
+      notification: notification,
+      userName: profile.name,
+      globalReminderTime: prefs.routineReminderTime,
+      intervalHours: prefs.incompleteReminderIntervalHours,
+      alertMode: prefs.alertMode,
+    );
   }
 
   Future<void> _runManualBackup() async {
@@ -613,7 +704,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         SnackBar(content: Text(result.message)),
       );
 
-      if (result.success && !result.cancelled && !kIsWeb && result.filePath != null) {
+      if (result.success &&
+          !result.cancelled &&
+          !kIsWeb &&
+          result.filePath != null &&
+          _canShowBackupActions(result.filePath!)) {
         await _showBackupActions(result.filePath!);
       }
     } finally {
@@ -680,6 +775,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         );
       },
     );
+  }
+
+  bool _canShowBackupActions(String filePath) {
+    final normalized = filePath.trim().toLowerCase();
+    return !normalized.startsWith('content://') &&
+        !normalized.startsWith('document://');
   }
 
   Future<void> _openPath(String targetPath, {required String errorPrefix}) async {

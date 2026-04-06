@@ -701,6 +701,8 @@ class _CalculatorDialogState extends State<_CalculatorDialog> {
             const SizedBox(height: 8),
             _calcRow(['4', '5', '6', '+']),
             const SizedBox(height: 8),
+            _calcRow(['1', '2', '3', '=']),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(flex: 2, child: _CalcButton(label: '0', onTap: () => _onTap('0'))),
@@ -709,9 +711,9 @@ class _CalculatorDialogState extends State<_CalculatorDialog> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: _CalcButton(
-                    label: '=',
-                    onTap: () => _onTap('='),
-                    filled: true,
+                    label: 'DEL',
+                    onTap: () => _onTap('DEL'),
+                    filled: false,
                   ),
                 ),
               ],
