@@ -137,41 +137,8 @@ class NotificationService {
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
-    if (scheduledDate.isBefore(DateTime.now())) return;
-
-    try {
-      final localScheduledDate = tz.TZDateTime(
-        tz.local,
-        scheduledDate.year,
-        scheduledDate.month,
-        scheduledDate.day,
-        scheduledDate.hour,
-        scheduledDate.minute,
-      );
-      final profileName = await _loadProfileName();
-      final reminderTitle =
-          _buildGreetingTitle(profileName, localScheduledDate.hour);
-      final reminderBody = _buildPendingTaskNoticeBody(
-        _deriveTaskName(title: title, body: body),
-      );
-
-      await _notificationsPlugin.zonedSchedule(
-        id: id,
-        title: reminderTitle,
-        body: reminderBody,
-        scheduledDate: localScheduledDate,
-        notificationDetails: _buildDetails(
-          channelBaseId: 'todo_reminders',
-          channelBaseName: 'Todo Reminders',
-          channelDescription: 'Reminders for your upcoming tasks',
-          alertMode: alertMode,
-          expandedText: reminderBody,
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      );
-    } catch (e) {
-      debugPrint('Notification schedule error');
-    }
+    // Keep only pending-list follow-up notifications.
+    await cancelReminder(id);
   }
 
   Future<void> scheduleRoutineReminder({
@@ -205,51 +172,8 @@ class NotificationService {
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
-
-    final validDays = daysOfWeek.where((d) => d >= 1 && d <= 7).toList();
-    if (validDays.isEmpty || reminderTimes.isEmpty) return;
-    final profileName = await _loadProfileName();
-    final pendingTaskName = _deriveTaskName(title: title, body: body);
-
-    for (int reminderIndex = 0;
-        reminderIndex < reminderTimes.length;
-        reminderIndex++) {
-      final reminder = reminderTimes[reminderIndex];
-
-      for (final day in validDays) {
-        final uniqueId = _routineNotificationId(
-          routineId: routineId,
-          reminderIndex: reminderIndex,
-          dayOfWeek: day,
-        );
-        final scheduledDate =
-            _nextInstanceOfDayAt(day, reminder.hour, reminder.minute);
-        final reminderTitle =
-            _buildGreetingTitle(profileName, scheduledDate.hour);
-        final reminderBody =
-            _buildPendingTaskNoticeBody(pendingTaskName);
-
-        try {
-          await _notificationsPlugin.zonedSchedule(
-            id: uniqueId,
-            title: reminderTitle,
-            body: reminderBody,
-            scheduledDate: scheduledDate,
-            notificationDetails: _buildDetails(
-              channelBaseId: 'routine_reminders',
-              channelBaseName: 'Routine Reminders',
-              channelDescription: 'Reminders for your routines',
-              alertMode: alertMode,
-              expandedText: reminderBody,
-            ),
-            androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-            matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-          );
-        } catch (e) {
-          debugPrint('Routine notification schedule error: $e');
-        }
-      }
-    }
+    // Keep only pending-list follow-up notifications.
+    await cancelRoutineReminders(routineId);
   }
 
   Future<void> scheduleGlobalDailyReminder({
@@ -257,34 +181,8 @@ class NotificationService {
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
-
+    // Keep only pending-list follow-up notifications.
     await cancelGlobalDailyReminder();
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduled =
-        tz.TZDateTime(tz.local, now.year, now.month, now.day, time.hour, time.minute);
-    if (!scheduled.isAfter(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
-    }
-
-    try {
-      await _notificationsPlugin.zonedSchedule(
-        id: _globalDailyReminderId,
-        title: 'TOD Reminder',
-        body: 'Check your routines and plan your day.',
-        scheduledDate: scheduled,
-        notificationDetails: _buildDetails(
-          channelBaseId: 'daily_routine_reminder',
-          channelBaseName: 'Daily Routine Reminder',
-          channelDescription: 'Global daily reminder for TOD',
-          alertMode: alertMode,
-          expandedText: 'Check your routines and plan your day.',
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.time,
-      );
-    } catch (e) {
-      debugPrint('Global reminder schedule error: $e');
-    }
   }
 
   Future<void> cancelGlobalDailyReminder() async {
@@ -304,45 +202,8 @@ class NotificationService {
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
-
+    // Keep only pending-list follow-up notifications.
     await cancelDailyTaskDigestReminders();
-
-    final greetingName = _sanitizeNotificationName(userName);
-    final greetingTitle = _buildGreetingTitle(greetingName, time.hour);
-
-    if (routineTaskTitles.isNotEmpty) {
-      final routineBody = _buildDigestBody(
-        heading: "Your today's routine tasks:",
-        tasks: routineTaskTitles,
-      );
-      await _scheduleDailyDigestNotification(
-        notificationId: _dailyRoutineDigestId,
-        time: time,
-        title: greetingTitle,
-        body: routineBody,
-        channelBaseId: 'daily_routine_digest',
-        channelBaseName: 'Daily Routine Digest',
-        channelDescription: 'Combined morning summary of routine tasks',
-        alertMode: alertMode,
-      );
-    }
-
-    if (todoTaskTitles.isNotEmpty) {
-      final todoBody = _buildDigestBody(
-        heading: "Your today's task list:",
-        tasks: todoTaskTitles,
-      );
-      await _scheduleDailyDigestNotification(
-        notificationId: _dailyTodoDigestId,
-        time: time,
-        title: greetingTitle,
-        body: todoBody,
-        channelBaseId: 'daily_todo_digest',
-        channelBaseName: 'Daily Todo Digest',
-        channelDescription: 'Combined morning summary of todo tasks',
-        alertMode: alertMode,
-      );
-    }
   }
 
   Future<void> cancelDailyTaskDigestReminders() async {
@@ -540,20 +401,18 @@ class NotificationService {
     required int pendingRoutineItemCount,
     required int pendingHabitCount,
   }) {
-    if (pendingTaskNames.length <= 1) {
-      final singleName = pendingTaskNames.isNotEmpty
-          ? pendingTaskNames.first
-          : _fallbackPendingTaskName(
+    final normalizedNames = pendingTaskNames.isNotEmpty
+        ? pendingTaskNames
+        : <String>[
+            _fallbackPendingTaskName(
               pendingTodoCount: pendingTodoCount,
               pendingRoutineItemCount: pendingRoutineItemCount,
               pendingHabitCount: pendingHabitCount,
-            );
-      return _buildPendingTaskNoticeBody(singleName);
-    }
-
+            ),
+          ];
     const maxVisibleItems = 12;
-    final visible = pendingTaskNames.take(maxVisibleItems).toList();
-    final hiddenCount = pendingTaskNames.length - visible.length;
+    final visible = normalizedNames.take(maxVisibleItems).toList();
+    final hiddenCount = normalizedNames.length - visible.length;
 
     final buffer = StringBuffer('You have pending tasks:\n');
     for (int i = 0; i < visible.length; i++) {
@@ -576,39 +435,8 @@ class NotificationService {
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
-
+    // Keep only pending-list follow-up notifications.
     await cancelHabitReminders(habitId);
-    final profileName = await _loadProfileName();
-    final pendingTaskName = _deriveTaskName(title: title, body: body);
-
-    for (int day = 1; day <= 7; day++) {
-      final uniqueId = _habitNotificationId(habitId, day);
-      tz.TZDateTime scheduledDate = _nextInstanceOfDayAt(day, hour, minute);
-      final reminderTitle =
-          _buildGreetingTitle(profileName, scheduledDate.hour);
-      final reminderBody =
-          _buildPendingTaskNoticeBody(pendingTaskName);
-
-      try {
-        await _notificationsPlugin.zonedSchedule(
-          id: uniqueId,
-          title: reminderTitle,
-          body: reminderBody,
-          scheduledDate: scheduledDate,
-          notificationDetails: _buildDetails(
-            channelBaseId: 'habit_reminders',
-            channelBaseName: 'Habit Reminders',
-            channelDescription: 'Reminders for your daily habits',
-            alertMode: alertMode,
-            expandedText: reminderBody,
-          ),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-          matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-        );
-      } catch (e) {
-        debugPrint('Habit notification schedule error: $e');
-      }
-    }
   }
 
   Future<void> scheduleBirthdayReminders({

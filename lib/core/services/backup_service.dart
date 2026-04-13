@@ -66,8 +66,9 @@ class AppBackupService {
     try {
       final picked = await FilePicker.platform.pickFiles(
         dialogTitle: 'Select TOD Backup File',
-        type: FileType.custom,
-        allowedExtensions: const ['todbackup', 'json'],
+        // Some Android file managers disable items when using custom extension filters.
+        // We accept any file here and validate payload signature after reading.
+        type: FileType.any,
         withData: true,
       );
 

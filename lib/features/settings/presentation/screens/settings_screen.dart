@@ -626,11 +626,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final db = ref.read(databaseProvider);
     final notification = ref.read(notificationServiceProvider);
     final prefs = ref.read(notificationPreferencesProvider);
-    final profile = ref.read(userProfileProvider);
     final routines = await db.getAllRoutines();
     final birthdays = await db.getAllBirthdays();
     final todos = await db.watchAllTodos().first;
     final habits = await db.watchAllHabits().first;
+
+    await notification.cancelGlobalDailyReminder();
+    await notification.cancelDailyTaskDigestReminders();
 
     for (final routine in routines) {
       await notification.cancelRoutineReminders(routine.id);
@@ -686,7 +688,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await IncompleteReminderScheduler.refresh(
       db: db,
       notification: notification,
-      userName: profile.name,
       globalReminderTime: prefs.routineReminderTime,
       intervalHours: prefs.incompleteReminderIntervalHours,
       alertMode: prefs.alertMode,

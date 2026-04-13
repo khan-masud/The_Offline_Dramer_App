@@ -8,7 +8,6 @@ import 'core/services/incomplete_reminder_scheduler.dart';
 import 'core/services/notification_service.dart';
 import 'core/database/database_provider.dart';
 import 'providers/notification_preferences_provider.dart';
-import 'providers/profile_provider.dart';
 import 'app.dart';
 
 // Global navigator key to show dialogs from anywhere (like system share intent)
@@ -116,13 +115,11 @@ class _AppWithStartupTasksState extends ConsumerState<_AppWithStartupTasks> {
     try {
       final db = ref.read(databaseProvider);
       final prefs = ref.read(notificationPreferencesProvider);
-      final profile = ref.read(userProfileProvider);
       final notif = NotificationService();
 
       await IncompleteReminderScheduler.refresh(
         db: db,
         notification: notif,
-        userName: profile.name,
         globalReminderTime: prefs.routineReminderTime,
         intervalHours: prefs.incompleteReminderIntervalHours,
         alertMode: prefs.alertMode,
@@ -140,7 +137,6 @@ class _AppWithStartupTasksState extends ConsumerState<_AppWithStartupTasks> {
 
       final db = ref.read(databaseProvider);
       final prefs = ref.read(notificationPreferencesProvider);
-      final profile = ref.read(userProfileProvider);
       final notif = NotificationService();
 
       final routines = await db.getAllRoutines();
@@ -188,6 +184,9 @@ class _AppWithStartupTasksState extends ConsumerState<_AppWithStartupTasks> {
         alertMode: prefs.alertMode,
       );
 
+      await notif.cancelGlobalDailyReminder();
+      await notif.cancelDailyTaskDigestReminders();
+
       await notif.rescheduleAllBirthdayReminders(
         birthdays: birthdays,
         alertMode: prefs.alertMode,
@@ -206,7 +205,6 @@ class _AppWithStartupTasksState extends ConsumerState<_AppWithStartupTasks> {
       await IncompleteReminderScheduler.refresh(
         db: db,
         notification: notif,
-        userName: profile.name,
         globalReminderTime: prefs.routineReminderTime,
         intervalHours: prefs.incompleteReminderIntervalHours,
         alertMode: prefs.alertMode,

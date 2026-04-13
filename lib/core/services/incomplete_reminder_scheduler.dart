@@ -8,31 +8,16 @@ class IncompleteReminderScheduler {
   static Future<void> refresh({
     required AppDatabase db,
     required NotificationService notification,
-    required String userName,
     required TimeOfDay globalReminderTime,
     required int intervalHours,
     required ReminderAlertMode alertMode,
   }) async {
-    final now = DateTime.now();
-    final startOfToday = DateTime(now.year, now.month, now.day);
-    final endOfToday = startOfToday.add(const Duration(days: 1));
-
     final pendingTodos = await db.watchAllTodos(completed: false).first;
     final pendingTodoCount = pendingTodos.length;
     final pendingFollowUpItems = pendingTodos
       .map((todo) => todo.title.trim())
       .where((title) => title.isNotEmpty)
       .toList();
-
-    final todayTodoTaskTitles = pendingTodos
-        .where((todo) {
-          final due = todo.dueDate;
-          if (due == null) return true;
-          return !due.isBefore(startOfToday) && due.isBefore(endOfToday);
-        })
-        .map((todo) => todo.title.trim())
-        .where((title) => title.isNotEmpty)
-        .toList();
 
     final todayDow = DateTime.now().weekday.toString();
     final routines = await db.getAllRoutines();
@@ -44,7 +29,6 @@ class IncompleteReminderScheduler {
     final completedRoutineItemIds = completions.map((c) => c.routineItemId).toSet();
 
     int pendingRoutineItemCount = 0;
-    final routineTaskTitles = <String>[];
     final includeRoutineName = todayRoutines.length > 1;
 
     for (final routine in todayRoutines) {
@@ -61,12 +45,6 @@ class IncompleteReminderScheduler {
             ? '$taskTitle (${routine.title})'
             : taskTitle;
         pendingFollowUpItems.add(followUpTitle);
-
-        if (includeRoutineName) {
-          routineTaskTitles.add('$taskTitle (${routine.title})');
-        } else {
-          routineTaskTitles.add(taskTitle);
-        }
       }
     }
 
@@ -82,14 +60,6 @@ class IncompleteReminderScheduler {
       if (name.isEmpty) continue;
       pendingFollowUpItems.add('Habit: $name');
     }
-
-    await notification.scheduleDailyTaskDigestReminders(
-      time: globalReminderTime,
-      userName: userName,
-      routineTaskTitles: routineTaskTitles,
-      todoTaskTitles: todayTodoTaskTitles,
-      alertMode: alertMode,
-    );
 
     await notification.scheduleIncompleteWorkFollowUpReminders(
       pendingTodoCount: pendingTodoCount,

@@ -94,23 +94,6 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen> {
                 ),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _isSyncing ? null : _syncNow,
-                icon: _isSyncing
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.sync_rounded),
-                label: Text(_isSyncing ? 'Syncing contacts...' : 'Sync Contacts'),
-              ),
-            ),
-          ),
           const SizedBox(height: 8),
           Expanded(
             child: contactsAsync.when(
@@ -133,7 +116,7 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen> {
                           const SizedBox(height: 14),
                           Text('No contacts yet', style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurface)),
                           const SizedBox(height: 6),
-                          Text('Use + to add manually or tap Sync Contacts to import phone contacts', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant), textAlign: TextAlign.center),
+                          Text('Use + to add manually or tap the top-right sync icon to import phone contacts', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant), textAlign: TextAlign.center),
                         ],
                       ),
                     ),
@@ -185,6 +168,11 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen> {
                               icon: const Icon(Icons.edit_outlined),
                               tooltip: 'Edit',
                               onPressed: () => _openContactSheet(context, existing: c),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline_rounded),
+                              tooltip: 'Delete',
+                              onPressed: () => _confirmDeleteContact(context, c),
                             ),
                           ],
                         ),
@@ -377,6 +365,37 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen> {
     Clipboard.setData(ClipboardData(text: phone));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Number copied')),
+    );
+  }
+
+  Future<void> _confirmDeleteContact(BuildContext context, ContactEntry entry) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Contact?'),
+        content: Text('Remove ${entry.displayName} from contact list?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete != true) return;
+
+    final db = ref.read(databaseProvider);
+    await db.deleteContactEntry(entry.id);
+    ref.invalidate(contactEntriesProvider);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Contact deleted')),
     );
   }
 
