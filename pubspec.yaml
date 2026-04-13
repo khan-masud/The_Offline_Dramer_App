@@ -1,7 +1,7 @@
 name: tod
 description: "The Offline Dreamer - Your Personal Life Manager"
 publish_to: 'none'
-version: 3.2.1+2
+version: 3.3.5+6
 
 environment:
   sdk: ^3.7.0
@@ -41,6 +41,8 @@ dependencies:
   image_picker: ^1.1.2
   image_cropper: ^8.0.2
   flutter_markdown: ^0.7.3
+  markdown: ^7.3.0
+  pdf: ^3.11.3
   file_picker: ^8.1.7
   flutter_contacts: ^1.1.9+2
   share_plus: ^10.1.2

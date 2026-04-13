@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -108,20 +107,18 @@ class NotesScreen extends ConsumerWidget {
                 error: (_, __) => const SizedBox.shrink(),
               ),
             ),
-            // Notes staggered grid
+            // Notes list
             Expanded(
               child: notesAsync.when(
                 data: (allNotes) {
                   final hidden = ref.watch(hiddenItemsProvider);
                   final notes = allNotes.where((n) => !hidden.contains('note_${n.id}')).toList();
                   if (notes.isEmpty) return _emptyState(context);
-                  
-                  return MasonryGridView.count(
-                    padding: const EdgeInsets.all(12),
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
+
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(12, 6, 12, 20),
                     itemCount: notes.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (context, i) {
                       final note = notes[i];
                       final colors = isDark ? _noteColorsDark : _noteColors;
@@ -143,7 +140,7 @@ class NotesScreen extends ConsumerWidget {
                           );
                         },
                         onDelete: () => _deleteNote(context, ref, note),
-                      ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
+                      ).animate().fadeIn(delay: (35 * i).ms, duration: 240.ms);
                     },
                   );
                 },
@@ -269,143 +266,50 @@ class _NoteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDefaultColor = backgroundColor == Colors.transparent;
+    final tileBg = isDefaultColor
+        ? Colors.transparent
+        : backgroundColor.withValues(alpha: 0.25);
+    final titleText = note.title.trim().isEmpty ? 'Untitled note' : note.title.trim();
 
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
       onLongPress: () => _showOptions(context),
+      borderRadius: BorderRadius.circular(10),
       child: Container(
         decoration: BoxDecoration(
-          color: isDefaultColor ? theme.scaffoldBackgroundColor : backgroundColor,
-          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
-          boxShadow: [
-            BoxShadow(
-              color: theme.shadowColor.withValues(alpha: 0.08),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          color: tileBg,
+          borderRadius: BorderRadius.circular(10),
           border: Border.all(
-            color: isDefaultColor ? theme.colorScheme.outline.withValues(alpha: 0.5) : backgroundColor,
-            width: 1,
+            color: theme.colorScheme.outline.withValues(alpha: 0.2),
+            width: 0.8,
           ),
         ),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+        padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+        child: Row(
           children: [
-            if (note.title.isNotEmpty || note.isPinned)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (note.title.isNotEmpty)
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Text(
-                          note.title,
-                          style: AppTypography.noteTitle.copyWith(
-                            color: isDefaultColor ? theme.colorScheme.onSurface : Colors.black87,
-                            fontSize: 16,
-                            height: 1.3,
-                          ),
-                          maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    )
-                  else
-                    const Spacer(),
-                  if (note.isPinned)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: Icon(Icons.push_pin_rounded, size: 16, color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black54),
-                    ),
-                ],
-              ),
-            
-            if (note.content.isNotEmpty)
-              _buildContentPreview(context, isDefaultColor),
-
-            if (note.folder != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isDefaultColor ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5) : Colors.black12,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    note.folder!,
-                    style: AppTypography.labelSmall.copyWith(color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black87),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+            Expanded(
+              child: Text(
+                titleText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.noteTitle.copyWith(
+                  color: isDefaultColor ? theme.colorScheme.onSurface : Colors.black87,
+                  fontSize: 16,
+                  height: 1.2,
                 ),
               ),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                note.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                size: 18,
+              ),
+              tooltip: note.isPinned ? 'Unpin' : 'Pin',
+              onPressed: onTogglePin,
+            ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildContentPreview(BuildContext context, bool isDefaultColor) {
-    final theme = Theme.of(context);
-    final isChecklist = note.content.startsWith('- [ ] ') || note.content.startsWith('- [x] ');
-    
-    final lines = note.content.split('\n').take(8).toList();
-    
-    if (isChecklist) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: lines.map((line) {
-          if (line.trim().isEmpty) return const SizedBox.shrink();
-          final isChecked = line.contains('[x]');
-          final text = line.replaceFirst(RegExp(r'- \[( |x)\] '), '');
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  isChecked ? Icons.check_box_outlined : Icons.check_box_outline_blank,
-                  size: 16,
-                  color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black54,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    text,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.noteContent.copyWith(
-                      fontSize: 14,
-                      color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black87,
-                      decoration: isChecked ? TextDecoration.lineThrough : null,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
-      );
-    }
-
-    // Strip markdown formatting for preview
-    String previewText = note.content
-        .replaceAll(RegExp(r'\*\*(.*?)\*\*'), r'$1')
-        .replaceAll(RegExp(r'\*(.*?)\*'), r'$1');
-
-    return Text(
-      previewText,
-      maxLines: 8,
-      overflow: TextOverflow.ellipsis,
-      style: AppTypography.noteContent.copyWith(
-        fontSize: 14,
-        color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black87,
-        height: 1.4,
       ),
     );
   }
@@ -464,3 +368,4 @@ class _FolderChip extends StatelessWidget {
     );
   }
 }
+
