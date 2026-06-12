@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -12,6 +13,9 @@ import '../../../../core/providers/activity_log_provider.dart';
 import '../../data/notes_provider.dart';
 import 'note_editor_screen.dart';
 import 'note_preview_screen.dart';
+
+// View mode toggle
+final noteViewModeProvider = StateProvider<bool>((ref) => false); // false=list, true=grid
 
 // Note colors
 const _noteColors = [
@@ -43,6 +47,18 @@ class NotesScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Notes'),
         centerTitle: false,
+        actions: [
+          Consumer(
+            builder: (context, ref, _) {
+              final isGrid = ref.watch(noteViewModeProvider);
+              return IconButton(
+                icon: Icon(isGrid ? Icons.view_list_rounded : Icons.grid_view_rounded),
+                tooltip: isGrid ? 'List view' : 'Grid view',
+                onPressed: () => ref.read(noteViewModeProvider.notifier).state = !isGrid,
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -115,6 +131,41 @@ class NotesScreen extends ConsumerWidget {
                   final notes = allNotes.where((n) => !hidden.contains('note_${n.id}')).toList();
                   if (notes.isEmpty) return _emptyState(context);
 
+                  final isGrid = ref.watch(noteViewModeProvider);
+
+                  if (isGrid) {
+                    return MasonryGridView.count(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 10,
+                      padding: const EdgeInsets.fromLTRB(12, 6, 12, 20),
+                      itemCount: notes.length,
+                      itemBuilder: (context, i) {
+                        final note = notes[i];
+                        final colors = isDark ? _noteColorsDark : _noteColors;
+                        final bgColor = note.colorIndex < colors.length ? colors[note.colorIndex] : Colors.transparent;
+
+                        return _NoteGridCard(
+                          note: note,
+                          backgroundColor: bgColor,
+                          onTap: () => _openWithFadeSlide(
+                            context,
+                            NotePreviewScreen(note: note),
+                          ),
+                          onTogglePin: () {
+                            ref.read(databaseProvider).toggleNotePin(note.id, !note.isPinned);
+                            ref.read(activityLogProvider.notifier).log(
+                              type: 'update',
+                              entityType: 'note',
+                              entityTitle: note.title,
+                            );
+                          },
+                          onDelete: () => _deleteNote(context, ref, note),
+                        ).animate().fadeIn(delay: (35 * i).ms, duration: 240.ms);
+                      },
+                    );
+                  }
+
                   return ListView.separated(
                     padding: const EdgeInsets.fromLTRB(12, 6, 12, 20),
                     itemCount: notes.length,
@@ -145,7 +196,19 @@ class NotesScreen extends ConsumerWidget {
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(child: Text('Error: $e')),
+                error: (e, _) => Center(
+                    child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.error_outline_rounded, size: 48,
+                          color: Theme.of(context).colorScheme.error),
+                      const SizedBox(height: 12),
+                      const Text('Could not load notes'),
+                    ],
+                  ),
+                )),
               ),
             ),
           ],
@@ -308,6 +371,122 @@ class _NoteCard extends StatelessWidget {
               tooltip: note.isPinned ? 'Unpin' : 'Pin',
               onPressed: onTogglePin,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: Icon(note.isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded),
+              title: Text(note.isPinned ? 'Unpin note' : 'Pin note'),
+              onTap: () { Navigator.pop(ctx); onTogglePin(); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+              title: const Text('Delete note', style: TextStyle(color: AppColors.error)),
+              onTap: () { Navigator.pop(ctx); onDelete(); },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ==================== NOTE GRID CARD ====================
+class _NoteGridCard extends StatelessWidget {
+  final Note note;
+  final Color backgroundColor;
+  final VoidCallback onTap;
+  final VoidCallback onTogglePin;
+  final VoidCallback onDelete;
+
+  const _NoteGridCard({
+    required this.note,
+    required this.backgroundColor,
+    required this.onTap,
+    required this.onTogglePin,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDefaultColor = backgroundColor == Colors.transparent;
+    final tileBg = isDefaultColor
+        ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)
+        : backgroundColor.withValues(alpha: 0.25);
+    final titleText = note.title.trim().isEmpty ? 'Untitled note' : note.title.trim();
+    final contentPreview = note.content.trim();
+
+    return InkWell(
+      onTap: onTap,
+      onLongPress: () => _showOptions(context),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: tileBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDefaultColor
+                ? theme.colorScheme.outline.withValues(alpha: 0.15)
+                : backgroundColor.withValues(alpha: 0.4),
+            width: 0.8,
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Title row with pin
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    titleText,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.noteTitle.copyWith(
+                      color: isDefaultColor ? theme.colorScheme.onSurface : Colors.black87,
+                      fontSize: 15,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+                if (note.isPinned)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4),
+                    child: Icon(Icons.push_pin_rounded, size: 16,
+                        color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black54),
+                  ),
+              ],
+            ),
+            // Content preview
+            if (contentPreview.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                contentPreview,
+                maxLines: 5,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.bodySmall.copyWith(
+                  color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black54,
+                  height: 1.5,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+            // Spacer to push actions to bottom
+            const SizedBox(height: 4),
           ],
         ),
       ),

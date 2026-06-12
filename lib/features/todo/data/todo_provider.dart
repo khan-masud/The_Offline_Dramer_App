@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/database/database_provider.dart';
@@ -6,6 +7,9 @@ import '../../../core/database/database_provider.dart';
 enum TodoFilter { all, pending, completed }
 
 final todoFilterProvider = StateProvider<TodoFilter>((ref) => TodoFilter.pending);
+
+// Search state
+final todoSearchProvider = StateProvider<String>((ref) => '');
 
 // Reactive todo list
 final todosProvider = StreamProvider<List<Todo>>((ref) {
@@ -20,6 +24,30 @@ final todosProvider = StreamProvider<List<Todo>>((ref) {
     case TodoFilter.completed:
       return db.watchAllTodos(completed: true);
   }
+});
+
+// Filtered todo list with search
+final filteredTodosProvider = Provider<AsyncValue<List<Todo>>>((ref) {
+  final todosAsync = ref.watch(todosProvider);
+  final searchQuery = ref.watch(todoSearchProvider).toLowerCase().trim();
+
+  if (searchQuery.isEmpty) return todosAsync;
+
+  return todosAsync.whenData(
+    (todos) => todos.where((t) {
+      final title = t.title.toLowerCase();
+      final desc = (t.description ?? '').toLowerCase();
+      String tagsStr = '';
+      try {
+        if (t.tags.isNotEmpty) {
+          tagsStr = (List<String>.from(jsonDecode(t.tags))).join(' ').toLowerCase();
+        }
+      } catch (_) {}
+      return title.contains(searchQuery) ||
+          desc.contains(searchQuery) ||
+          tagsStr.contains(searchQuery);
+    }).toList(),
+  );
 });
 
 // Todo stats

@@ -158,6 +158,7 @@ class HabitsScreen extends ConsumerWidget {
                                 ),
                               );
                             },
+                            onEdit: () => _showAddHabitSheet(context, ref, habit: habit),
                           ).animate().fadeIn(delay: (80 * i).ms, duration: 300.ms);
                         },
                         childCount: habits.length,
@@ -169,11 +170,35 @@ class HabitsScreen extends ConsumerWidget {
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
+            error: (e, _) => Center(
+                child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.error_outline_rounded, size: 48,
+                      color: Theme.of(context).colorScheme.error),
+                  const SizedBox(height: 12),
+                  const Text('Could not load progress'),
+                ],
+              ),
+            )),
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Error: $e')),
+        error: (e, _) => Center(
+            child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline_rounded, size: 48,
+                  color: Theme.of(context).colorScheme.error),
+              const SizedBox(height: 12),
+              const Text('Could not load habits'),
+            ],
+          ),
+        )),
       ),
       floatingActionButton: FloatingActionButton(
         heroTag: 'habits_fab',
@@ -204,12 +229,12 @@ class HabitsScreen extends ConsumerWidget {
     );
   }
 
-  void _showAddHabitSheet(BuildContext context, WidgetRef ref) {
+  void _showAddHabitSheet(BuildContext context, WidgetRef ref, {Habit? habit}) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const _AddHabitSheet(),
+      builder: (_) => _AddHabitSheet(habit: habit),
     );
   }
 }
@@ -220,12 +245,14 @@ class _HabitCard extends ConsumerWidget {
   final bool isDone;
   final VoidCallback onToggle;
   final VoidCallback onDelete;
+  final VoidCallback? onEdit;
 
   const _HabitCard({
     required this.habit,
     required this.isDone,
     required this.onToggle,
     required this.onDelete,
+    this.onEdit,
   });
 
   Color _getHabitColor() {
@@ -241,11 +268,24 @@ class _HabitCard extends ConsumerWidget {
     }
   }
 
+  String? _formatReminder(String? reminderTime) {
+    if (reminderTime == null || !reminderTime.contains(':')) return null;
+    final parts = reminderTime.split(':');
+    if (parts.length != 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    final period = hour < 12 ? 'AM' : 'PM';
+    final h = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    return '🔔 ${h.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $period';
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final streakAsync = ref.watch(habitStreakProvider(habit.id));
     final color = _getHabitColor();
+    final reminderLabel = _formatReminder(habit.reminderTime);
 
     return Dismissible(
       key: ValueKey(habit.id),
@@ -288,7 +328,7 @@ class _HabitCard extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 14),
-              // Title + target
+              // Title + target + reminder
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -305,31 +345,56 @@ class _HabitCard extends ConsumerWidget {
                       '${habit.targetDaysPerWeek}x per week',
                       style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     ),
+                    if (reminderLabel != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        reminderLabel,
+                        style: AppTypography.labelSmall.copyWith(color: AppColors.warning),
+                      ),
+                    ],
                   ],
                 ),
               ),
-              // Streak
-              streakAsync.when(
-                data: (streak) {
-                  if (streak == 0) return const SizedBox.shrink();
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+              // Streak + Edit
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  streakAsync.when(
+                    data: (streak) {
+                      if (streak == 0) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.warning.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text('🔥', style: TextStyle(fontSize: 12)),
+                            const SizedBox(width: 4),
+                            Text('$streak', style: AppTypography.labelMedium.copyWith(color: AppColors.warning)),
+                          ],
+                        ),
+                      );
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  ),
+                  if (onEdit != null) ...[
+                    const SizedBox(width: 4),
+                    SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: IconButton(
+                        icon: Icon(Icons.edit_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                        onPressed: onEdit,
+                        padding: EdgeInsets.zero,
+                        tooltip: 'Edit habit',
+                      ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('🔥', style: TextStyle(fontSize: 12)),
-                        const SizedBox(width: 4),
-                        Text('$streak', style: AppTypography.labelMedium.copyWith(color: AppColors.warning)),
-                      ],
-                    ),
-                  );
-                },
-                loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
+                  ],
+                ],
               ),
             ],
           ),
@@ -339,9 +404,11 @@ class _HabitCard extends ConsumerWidget {
   }
 }
 
-// ==================== ADD HABIT SHEET ====================
+// ==================== ADD/EDIT HABIT SHEET ====================
 class _AddHabitSheet extends ConsumerStatefulWidget {
-  const _AddHabitSheet();
+  final Habit? habit;
+
+  const _AddHabitSheet({this.habit});
 
   @override
   ConsumerState<_AddHabitSheet> createState() => _AddHabitSheetState();
@@ -349,10 +416,36 @@ class _AddHabitSheet extends ConsumerStatefulWidget {
 
 class _AddHabitSheetState extends ConsumerState<_AddHabitSheet> {
   final _titleCtrl = TextEditingController();
-  String _emoji = '🎯';
-  int _targetDays = 7;
-  String _color = 'primary';
+  late String _emoji;
+  late int _targetDays;
+  late String _color;
   TimeOfDay? _reminderTime;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.habit != null) {
+      _titleCtrl.text = widget.habit!.title;
+      _emoji = widget.habit!.emoji;
+      _targetDays = widget.habit!.targetDaysPerWeek;
+      _color = widget.habit!.color;
+      _reminderTime = _parseReminderTime(widget.habit!.reminderTime);
+    } else {
+      _emoji = '🎯';
+      _targetDays = 7;
+      _color = 'primary';
+    }
+  }
+
+  TimeOfDay? _parseReminderTime(String? timeStr) {
+    if (timeStr == null || !timeStr.contains(':')) return null;
+    final parts = timeStr.split(':');
+    if (parts.length != 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    return TimeOfDay(hour: hour, minute: minute);
+  }
 
   @override
   void dispose() {
@@ -363,33 +456,72 @@ class _AddHabitSheetState extends ConsumerState<_AddHabitSheet> {
   Future<void> _save() async {
     if (_titleCtrl.text.trim().isEmpty) return;
     final db = ref.read(databaseProvider);
-    final habitId = await db.addHabit(HabitsCompanion(
-      title: Value(_titleCtrl.text.trim()),
-      emoji: Value(_emoji),
-      targetDaysPerWeek: Value(_targetDays),
-      color: Value(_color),
-      reminderTime: Value(_reminderTime != null ? '${_reminderTime!.hour.toString().padLeft(2, '0')}:${_reminderTime!.minute.toString().padLeft(2, '0')}' : null),
-      createdAt: Value(DateTime.now()),
-    ));
+    final reminderTimeStr = _reminderTime != null
+        ? '${_reminderTime!.hour.toString().padLeft(2, '0')}:${_reminderTime!.minute.toString().padLeft(2, '0')}'
+        : null;
 
-    ref.read(activityLogProvider.notifier).log(
-      entityType: 'habit',
-      entityTitle: _titleCtrl.text.trim(),
-      action: 'added',
-    );
-    
-    if (_reminderTime != null) {
-      final prefs = ref.read(notificationPreferencesProvider);
-      await ref.read(notificationServiceProvider).scheduleHabitReminder(
-        habitId: habitId,
-        title: 'Habit Reminder: ${_titleCtrl.text.trim()}',
-        body: 'Time to keep up your $_emoji habit stream!',
-        hour: _reminderTime!.hour,
-        minute: _reminderTime!.minute,
-        alertMode: prefs.alertMode,
+    if (widget.habit != null) {
+      // Update existing habit
+      await db.updateHabit(HabitsCompanion(
+        id: Value(widget.habit!.id),
+        title: Value(_titleCtrl.text.trim()),
+        emoji: Value(_emoji),
+        targetDaysPerWeek: Value(_targetDays),
+        color: Value(_color),
+        reminderTime: Value(reminderTimeStr),
+      ));
+
+      // Reschedule reminder
+      final notif = ref.read(notificationServiceProvider);
+      if (_reminderTime != null) {
+        final prefs = ref.read(notificationPreferencesProvider);
+        await notif.cancelHabitReminders(widget.habit!.id);
+        await notif.scheduleHabitReminder(
+          habitId: widget.habit!.id,
+          title: 'Habit Reminder: ${_titleCtrl.text.trim()}',
+          body: 'Time to keep up your $_emoji habit stream!',
+          hour: _reminderTime!.hour,
+          minute: _reminderTime!.minute,
+          alertMode: prefs.alertMode,
+        );
+      } else {
+        await notif.cancelHabitReminders(widget.habit!.id);
+      }
+
+      ref.read(activityLogProvider.notifier).log(
+        entityType: 'habit',
+        entityTitle: _titleCtrl.text.trim(),
+        action: 'updated',
       );
+    } else {
+      final habitId = await db.addHabit(HabitsCompanion(
+        title: Value(_titleCtrl.text.trim()),
+        emoji: Value(_emoji),
+        targetDaysPerWeek: Value(_targetDays),
+        color: Value(_color),
+        reminderTime: Value(reminderTimeStr),
+        createdAt: Value(DateTime.now()),
+      ));
+
+      ref.read(activityLogProvider.notifier).log(
+        entityType: 'habit',
+        entityTitle: _titleCtrl.text.trim(),
+        action: 'added',
+      );
+
+      if (_reminderTime != null) {
+        final prefs = ref.read(notificationPreferencesProvider);
+        await ref.read(notificationServiceProvider).scheduleHabitReminder(
+          habitId: habitId,
+          title: 'Habit Reminder: ${_titleCtrl.text.trim()}',
+          body: 'Time to keep up your $_emoji habit stream!',
+          hour: _reminderTime!.hour,
+          minute: _reminderTime!.minute,
+          alertMode: prefs.alertMode,
+        );
+      }
     }
-    
+
     if (mounted) Navigator.pop(context);
   }
 
@@ -425,8 +557,10 @@ class _AddHabitSheetState extends ConsumerState<_AddHabitSheet> {
           children: [
             Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: theme.colorScheme.outline, borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 20),
-            Text('New Habit', style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface)),
-            const SizedBox(height: 16),
+            Text(
+              widget.habit != null ? 'Edit Habit' : 'New Habit',
+              style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface),
+            ),const SizedBox(height: 16),
             // Title  
             TextField(
               controller: _titleCtrl,
@@ -556,7 +690,10 @@ class _AddHabitSheetState extends ConsumerState<_AddHabitSheet> {
                 onPressed: _save,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text('Create Habit', style: AppTypography.labelLarge.copyWith(color: Colors.white)),
+                  child: Text(
+                    widget.habit != null ? 'Update Habit' : 'Create Habit',
+                    style: AppTypography.labelLarge.copyWith(color: Colors.white),
+                  ),
                 ),
               ),
             ),

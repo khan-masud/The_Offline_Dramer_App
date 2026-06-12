@@ -1,23 +1,28 @@
 import 'dart:async';
+import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../../core/database/app_database.dart';
+import '../../../../core/database/database_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 
-class StopwatchScreen extends StatefulWidget {
+class StopwatchScreen extends ConsumerStatefulWidget {
   const StopwatchScreen({super.key});
 
   @override
-  State<StopwatchScreen> createState() => _StopwatchScreenState();
+  ConsumerState<StopwatchScreen> createState() => _StopwatchScreenState();
 }
 
-class _StopwatchScreenState extends State<StopwatchScreen> {
+class _StopwatchScreenState extends ConsumerState<StopwatchScreen> {
   final Stopwatch _stopwatch = Stopwatch();
   Timer? _timer;
   final List<Duration> _laps = [];
   Duration _displayed = Duration.zero;
+  DateTime? _sessionStart;
 
   bool get _isRunning => _stopwatch.isRunning;
 
@@ -28,6 +33,7 @@ class _StopwatchScreenState extends State<StopwatchScreen> {
   }
 
   void _start() {
+    _sessionStart ??= DateTime.now();
     _stopwatch.start();
     _timer = Timer.periodic(const Duration(milliseconds: 30), (_) {
       setState(() => _displayed = _stopwatch.elapsed);
@@ -38,7 +44,23 @@ class _StopwatchScreenState extends State<StopwatchScreen> {
   void _stop() {
     _stopwatch.stop();
     _timer?.cancel();
+    _saveSession();
     setState(() => _displayed = _stopwatch.elapsed);
+  }
+
+  void _saveSession() {
+    final elapsed = _displayed;
+    if (elapsed.inSeconds < 1 || _sessionStart == null) return;
+
+    ref.read(databaseProvider).addFocusSession(
+          FocusSessionsCompanion(
+            sessionType: const Value('stopwatch'),
+            durationSeconds: Value(elapsed.inSeconds),
+            startTime: Value(_sessionStart!),
+            endTime: Value(DateTime.now()),
+          ),
+        );
+    _sessionStart = null;
   }
 
   void _reset() {
@@ -47,6 +69,7 @@ class _StopwatchScreenState extends State<StopwatchScreen> {
     setState(() {
       _displayed = Duration.zero;
       _laps.clear();
+      _sessionStart = null;
     });
   }
 

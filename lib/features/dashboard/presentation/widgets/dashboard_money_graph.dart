@@ -47,7 +47,17 @@ class _DashboardMoneyGraphState extends ConsumerState<DashboardMoneyGraph> {
                 child: txAsync.when(
                   data: (txList) => _buildBarChart(txList, theme),
                   loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (err, _) => Center(child: Text('Error: $err')),
+                  error: (err, _) => Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.error_outline_rounded, size: 36,
+                            color: Theme.of(context).colorScheme.error),
+                        const SizedBox(height: 8),
+                        const Text('Could not load chart'),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],

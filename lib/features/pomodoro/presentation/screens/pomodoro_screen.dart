@@ -1,22 +1,26 @@
 import 'dart:async';
+import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:math' as math;
+import '../../../../core/database/app_database.dart';
+import '../../../../core/database/database_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 
 enum PomodoroPhase { focus, shortBreak, longBreak }
 
-class PomodoroScreen extends StatefulWidget {
+class PomodoroScreen extends ConsumerStatefulWidget {
   const PomodoroScreen({super.key});
 
   @override
-  State<PomodoroScreen> createState() => _PomodoroScreenState();
+  ConsumerState<PomodoroScreen> createState() => _PomodoroScreenState();
 }
 
-class _PomodoroScreenState extends State<PomodoroScreen> with TickerProviderStateMixin {
+class _PomodoroScreenState extends ConsumerState<PomodoroScreen> with TickerProviderStateMixin {
   // Durations (in minutes)
   int _focusDuration = 25;
   int _shortBreakDuration = 5;
@@ -28,6 +32,7 @@ class _PomodoroScreenState extends State<PomodoroScreen> with TickerProviderStat
   int _remainingSeconds = 25 * 60;
   bool _isRunning = false;
   Timer? _timer;
+  DateTime? _sessionStart;
 
   late AnimationController _ringController;
 
@@ -95,7 +100,10 @@ class _PomodoroScreenState extends State<PomodoroScreen> with TickerProviderStat
   }
 
   void _start() {
-    setState(() => _isRunning = true);
+    setState(() {
+      _isRunning = true;
+      _sessionStart ??= DateTime.now();
+    });
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (_remainingSeconds <= 0) {
         _onPhaseComplete();
@@ -112,6 +120,7 @@ class _PomodoroScreenState extends State<PomodoroScreen> with TickerProviderStat
 
   void _reset() {
     _timer?.cancel();
+    _sessionStart = null;
     setState(() {
       _isRunning = false;
       _remainingSeconds = _totalSeconds;
@@ -125,6 +134,22 @@ class _PomodoroScreenState extends State<PomodoroScreen> with TickerProviderStat
 
   void _onPhaseComplete() {
     _timer?.cancel();
+
+    // Save focus session to DB
+    if (_phase == PomodoroPhase.focus && _sessionStart != null) {
+      final elapsedSeconds = _totalSeconds - _remainingSeconds;
+      if (elapsedSeconds > 0) {
+        ref.read(databaseProvider).addFocusSession(
+              FocusSessionsCompanion(
+                sessionType: const Value('pomodoro'),
+                durationSeconds: Value(elapsedSeconds),
+                startTime: Value(_sessionStart!),
+                endTime: Value(DateTime.now()),
+              ),
+            );
+      }
+    }
+    _sessionStart = null;
     HapticFeedback.heavyImpact();
 
     setState(() {

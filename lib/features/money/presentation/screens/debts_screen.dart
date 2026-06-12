@@ -105,7 +105,19 @@ class DebtsScreen extends ConsumerWidget {
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Error: $e')),
+              error: (e, _) => Center(
+                  child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.error_outline_rounded, size: 48,
+                        color: Theme.of(context).colorScheme.error),
+                    const SizedBox(height: 12),
+                    const Text('Could not load debts'),
+                  ],
+                ),
+              )),
             ),
           ),
         ],
@@ -859,7 +871,20 @@ class _DebtDetailScreen extends ConsumerWidget {
       ),
       error: (e, _) => Scaffold(
         appBar: AppBar(title: const Text('Details')),
-        body: Center(child: Text('Error: $e')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline_rounded, size: 48,
+                    color: Theme.of(context).colorScheme.error),
+                const SizedBox(height: 12),
+                const Text('Could not load details'),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

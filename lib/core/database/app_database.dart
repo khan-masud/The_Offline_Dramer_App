@@ -294,6 +294,18 @@ class AppDatabase extends _$AppDatabase {
         TodosCompanion(isCompleted: Value(completed), updatedAt: Value(DateTime.now())),
       );
 
+  Future<void> updateTodoSortOrders(List<({int id, int sortOrder})> updates) async {
+    await batch((b) {
+      for (final item in updates) {
+        b.update(
+          todos,
+          TodosCompanion(sortOrder: Value(item.sortOrder)),
+          where: (t) => t.id.equals(item.id),
+        );
+      }
+    });
+  }
+
   // === SUB-TASK QUERIES ===
   Stream<List<SubTask>> watchSubTasks(int todoId) {
     return (select(subTasks)
@@ -808,6 +820,23 @@ class AppDatabase extends _$AppDatabase {
         'type': 'habit',
         'title': '${entry.value.length} habit(s) done',
         'color': 'purple',
+      });
+    }
+
+    // Routine completions in this month
+    final monthRoutines = await (select(routineCompletions)
+      ..where((c) => c.completedDate.isBiggerOrEqualValue(start) & c.completedDate.isSmallerThanValue(end))
+    ).get();
+    final routineDayMap = <DateTime, Set<int>>{};
+    for (final rc in monthRoutines) {
+      final day = DateTime(rc.completedDate.year, rc.completedDate.month, rc.completedDate.day);
+      routineDayMap.putIfAbsent(day, () => {}).add(rc.routineItemId);
+    }
+    for (final entry in routineDayMap.entries) {
+      events.putIfAbsent(entry.key, () => []).add({
+        'type': 'routine',
+        'title': '${entry.value.length} routine item(s) done',
+        'color': 'warning',
       });
     }
 

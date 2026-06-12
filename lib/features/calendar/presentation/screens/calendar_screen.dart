@@ -326,6 +326,7 @@ class _EventTile extends StatelessWidget {
       case 'todo': return event['isCompleted'] == true ? Icons.check_circle_rounded : Icons.circle_outlined;
       case 'transaction': return event['txType'] == 'income' ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
       case 'habit': return Icons.trending_up_rounded;
+      case 'routine': return Icons.repeat_rounded;
       default: return Icons.circle;
     }
   }
@@ -335,6 +336,7 @@ class _EventTile extends StatelessWidget {
       case 'todo': return 'Task';
       case 'transaction': return 'Transaction';
       case 'habit': return 'Habit';
+      case 'routine': return 'Routine';
       default: return '';
     }
   }

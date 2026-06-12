@@ -8387,7 +8387,7 @@ final class $$TodosTableReferences
     _$AppDatabase db,
   ) => MultiTypedResultKey.fromTable(
     db.subTasks,
-    aliasName: $_aliasNameGenerator(db.todos.id, db.subTasks.todoId),
+    aliasName: 'todos__id__sub_tasks__todo_id',
   );
 
   $$SubTasksTableProcessedTableManager get subTasksRefs {
@@ -8405,7 +8405,7 @@ final class $$TodosTableReferences
   static MultiTypedResultKey<$FocusSessionsTable, List<FocusSession>>
   _focusSessionsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.focusSessions,
-    aliasName: $_aliasNameGenerator(db.todos.id, db.focusSessions.todoId),
+    aliasName: 'todos__id__focus_sessions__todo_id',
   );
 
   $$FocusSessionsTableProcessedTableManager get focusSessionsRefs {
@@ -8894,9 +8894,8 @@ final class $$SubTasksTableReferences
     extends BaseReferences<_$AppDatabase, $SubTasksTable, SubTask> {
   $$SubTasksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $TodosTable _todoIdTable(_$AppDatabase db) => db.todos.createAlias(
-    $_aliasNameGenerator(db.subTasks.todoId, db.todos.id),
-  );
+  static $TodosTable _todoIdTable(_$AppDatabase db) =>
+      db.todos.createAlias('sub_tasks__todo_id__todos__id');
 
   $$TodosTableProcessedTableManager get todoId {
     final $_column = $_itemColumn<int>('todo_id')!;
@@ -9232,7 +9231,7 @@ final class $$RoutinesTableReferences
   static MultiTypedResultKey<$RoutineItemsTable, List<RoutineItem>>
   _routineItemsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.routineItems,
-    aliasName: $_aliasNameGenerator(db.routines.id, db.routineItems.routineId),
+    aliasName: 'routines__id__routine_items__routine_id',
   );
 
   $$RoutineItemsTableProcessedTableManager get routineItemsRefs {
@@ -9572,9 +9571,7 @@ final class $$RoutineItemsTableReferences
   $$RoutineItemsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static $RoutinesTable _routineIdTable(_$AppDatabase db) =>
-      db.routines.createAlias(
-        $_aliasNameGenerator(db.routineItems.routineId, db.routines.id),
-      );
+      db.routines.createAlias('routine_items__routine_id__routines__id');
 
   $$RoutinesTableProcessedTableManager get routineId {
     final $_column = $_itemColumn<int>('routine_id')!;
@@ -9593,10 +9590,7 @@ final class $$RoutineItemsTableReferences
   static MultiTypedResultKey<$FocusSessionsTable, List<FocusSession>>
   _focusSessionsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.focusSessions,
-    aliasName: $_aliasNameGenerator(
-      db.routineItems.id,
-      db.focusSessions.routineItemId,
-    ),
+    aliasName: 'routine_items__id__focus_sessions__routine_item_id',
   );
 
   $$FocusSessionsTableProcessedTableManager get focusSessionsRefs {
@@ -9614,10 +9608,7 @@ final class $$RoutineItemsTableReferences
   static MultiTypedResultKey<$RoutineSubTasksTable, List<RoutineSubTask>>
   _routineSubTasksRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.routineSubTasks,
-    aliasName: $_aliasNameGenerator(
-      db.routineItems.id,
-      db.routineSubTasks.routineItemId,
-    ),
+    aliasName: 'routine_items__id__routine_sub_tasks__routine_item_id',
   );
 
   $$RoutineSubTasksTableProcessedTableManager get routineSubTasksRefs {
@@ -9638,10 +9629,7 @@ final class $$RoutineItemsTableReferences
   _routineCompletionsRefsTable(_$AppDatabase db) =>
       MultiTypedResultKey.fromTable(
         db.routineCompletions,
-        aliasName: $_aliasNameGenerator(
-          db.routineItems.id,
-          db.routineCompletions.routineItemId,
-        ),
+        aliasName: 'routine_items__id__routine_completions__routine_item_id',
       );
 
   $$RoutineCompletionsTableProcessedTableManager get routineCompletionsRefs {
@@ -10234,9 +10222,8 @@ final class $$FocusSessionsTableReferences
     super.$_typedResult,
   );
 
-  static $TodosTable _todoIdTable(_$AppDatabase db) => db.todos.createAlias(
-    $_aliasNameGenerator(db.focusSessions.todoId, db.todos.id),
-  );
+  static $TodosTable _todoIdTable(_$AppDatabase db) =>
+      db.todos.createAlias('focus_sessions__todo_id__todos__id');
 
   $$TodosTableProcessedTableManager? get todoId {
     final $_column = $_itemColumn<int>('todo_id');
@@ -10252,13 +10239,9 @@ final class $$FocusSessionsTableReferences
     );
   }
 
-  static $RoutineItemsTable _routineItemIdTable(_$AppDatabase db) =>
-      db.routineItems.createAlias(
-        $_aliasNameGenerator(
-          db.focusSessions.routineItemId,
-          db.routineItems.id,
-        ),
-      );
+  static $RoutineItemsTable _routineItemIdTable(_$AppDatabase db) => db
+      .routineItems
+      .createAlias('focus_sessions__routine_item_id__routine_items__id');
 
   $$RoutineItemsTableProcessedTableManager? get routineItemId {
     final $_column = $_itemColumn<int>('routine_item_id');
@@ -10942,13 +10925,9 @@ final class $$RoutineSubTasksTableReferences
     super.$_typedResult,
   );
 
-  static $RoutineItemsTable _routineItemIdTable(_$AppDatabase db) =>
-      db.routineItems.createAlias(
-        $_aliasNameGenerator(
-          db.routineSubTasks.routineItemId,
-          db.routineItems.id,
-        ),
-      );
+  static $RoutineItemsTable _routineItemIdTable(_$AppDatabase db) => db
+      .routineItems
+      .createAlias('routine_sub_tasks__routine_item_id__routine_items__id');
 
   $$RoutineItemsTableProcessedTableManager get routineItemId {
     final $_column = $_itemColumn<int>('routine_item_id')!;
@@ -11295,13 +11274,9 @@ final class $$RoutineCompletionsTableReferences
     super.$_typedResult,
   );
 
-  static $RoutineItemsTable _routineItemIdTable(_$AppDatabase db) =>
-      db.routineItems.createAlias(
-        $_aliasNameGenerator(
-          db.routineCompletions.routineItemId,
-          db.routineItems.id,
-        ),
-      );
+  static $RoutineItemsTable _routineItemIdTable(_$AppDatabase db) => db
+      .routineItems
+      .createAlias('routine_completions__routine_item_id__routine_items__id');
 
   $$RoutineItemsTableProcessedTableManager get routineItemId {
     final $_column = $_itemColumn<int>('routine_item_id')!;
@@ -12526,7 +12501,7 @@ final class $$HabitsTableReferences
   static MultiTypedResultKey<$HabitCompletionsTable, List<HabitCompletion>>
   _habitCompletionsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.habitCompletions,
-    aliasName: $_aliasNameGenerator(db.habits.id, db.habitCompletions.habitId),
+    aliasName: 'habits__id__habit_completions__habit_id',
   );
 
   $$HabitCompletionsTableProcessedTableManager get habitCompletionsRefs {
@@ -12866,9 +12841,8 @@ final class $$HabitCompletionsTableReferences
     super.$_typedResult,
   );
 
-  static $HabitsTable _habitIdTable(_$AppDatabase db) => db.habits.createAlias(
-    $_aliasNameGenerator(db.habitCompletions.habitId, db.habits.id),
-  );
+  static $HabitsTable _habitIdTable(_$AppDatabase db) =>
+      db.habits.createAlias('habit_completions__habit_id__habits__id');
 
   $$HabitsTableProcessedTableManager get habitId {
     final $_column = $_itemColumn<int>('habit_id')!;
@@ -13172,7 +13146,7 @@ final class $$DebtsTableReferences
   static MultiTypedResultKey<$DebtPaymentsTable, List<DebtPayment>>
   _debtPaymentsRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.debtPayments,
-    aliasName: $_aliasNameGenerator(db.debts.id, db.debtPayments.debtId),
+    aliasName: 'debts__id__debt_payments__debt_id',
   );
 
   $$DebtPaymentsTableProcessedTableManager get debtPaymentsRefs {
@@ -13569,9 +13543,8 @@ final class $$DebtPaymentsTableReferences
     extends BaseReferences<_$AppDatabase, $DebtPaymentsTable, DebtPayment> {
   $$DebtPaymentsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $DebtsTable _debtIdTable(_$AppDatabase db) => db.debts.createAlias(
-    $_aliasNameGenerator(db.debtPayments.debtId, db.debts.id),
-  );
+  static $DebtsTable _debtIdTable(_$AppDatabase db) =>
+      db.debts.createAlias('debt_payments__debt_id__debts__id');
 
   $$DebtsTableProcessedTableManager get debtId {
     final $_column = $_itemColumn<int>('debt_id')!;

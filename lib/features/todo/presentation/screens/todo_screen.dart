@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,7 +25,8 @@ class TodoScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final filter = ref.watch(todoFilterProvider);
-    final todosAsync = ref.watch(todosProvider);
+    final searchQuery = ref.watch(todoSearchProvider);
+    final todosAsync = ref.watch(filteredTodosProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -130,7 +132,38 @@ class TodoScreen extends ConsumerWidget {
                     }).toList(),
               ),
             ),
-            const SizedBox(height: 12),
+            // Search bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: TextField(
+                onChanged: (val) => ref.read(todoSearchProvider.notifier).state = val,
+                style: AppTypography.bodyMedium,
+                decoration: InputDecoration(
+                  hintText: 'Search tasks...',
+                  hintStyle: AppTypography.bodyMedium.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                  prefixIcon: Icon(Icons.search_rounded, color: theme.colorScheme.onSurfaceVariant),
+                  suffixIcon: searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, size: 18),
+                          onPressed: () {
+                            ref.read(todoSearchProvider.notifier).state = '';
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
+                  isDense: true,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
             // Todo list
             Expanded(
               child: todosAsync.when(
@@ -139,94 +172,123 @@ class TodoScreen extends ConsumerWidget {
                   final todos = allTodos.where((t) => !hidden.contains('todo_${t.id}')).toList();
                   
                   if (todos.isEmpty) {
-                    return _EmptyState(filter: filter);
+                    return _EmptyState(filter: filter, searchQuery: searchQuery);
                   }
-                  return ListView.builder(
+                  return ReorderableListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     physics: const BouncingScrollPhysics(),
                     itemCount: todos.length,
+                    buildDefaultDragHandles: false,
+                    onReorder: (oldIndex, newIndex) {
+                      final updated = List<Todo>.from(todos);
+                      final item = updated.removeAt(oldIndex);
+                      updated.insert(newIndex, item);
+                      final db = ref.read(databaseProvider);
+                      db.updateTodoSortOrders(
+                        updated.asMap().entries.map((e) => (
+                          id: e.value.id,
+                          sortOrder: e.key,
+                        )).toList(),
+                      );
+                    },
                     itemBuilder: (context, i) {
                       final todo = todos[i];
-                      return _TodoCard(
-                        todo: todo,
-                        onToggle: () {
-                          HapticFeedback.lightImpact();
-                          if (!todo.isCompleted && todo.remindAt != null) {
-                            ref.read(notificationServiceProvider).cancelReminder(todo.id);
-                          } else if (todo.isCompleted &&
-                              todo.remindAt != null &&
-                              todo.remindAt!.isAfter(DateTime.now())) {
-                            ref.read(notificationServiceProvider).scheduleTodoReminder(
-                              id: todo.id,
-                              title: 'Todo Reminder',
-                              body: todo.title,
-                              scheduledDate: todo.remindAt!,
-                              alertMode: ref.read(notificationPreferencesProvider).alertMode,
-                            );
-                          }
-                          ref.read(databaseProvider).toggleTodo(todo.id, !todo.isCompleted);
-                          ref.read(activityLogProvider.notifier).log(
-                            type: 'update',
-                            entityType: 'task',
-                            entityTitle: todo.title,
-                          );
-                        },
-                        onDelete: () {
-                          final itemKey = 'todo_${todo.id}';
-                          final db = ref.read(databaseProvider);
-                          final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
-                          final notif = ref.read(notificationServiceProvider);
-                          final messenger = ScaffoldMessenger.of(context);
-                          
-                          hiddenNotifier.update((state) => {...state, itemKey});
-                          messenger.clearSnackBars();
-                          
-                          bool undone = false;
-                          final timer = Timer(const Duration(seconds: 3), () async {
-                            if (!undone) {
-                              await notif.cancelReminder(todo.id);
-                              await db.deleteTodo(todo.id);
-                              hiddenNotifier.update((state) {
-                                final s = {...state};
-                                s.remove(itemKey);
-                                return s;
-                              });
-                              ref.read(activityLogProvider.notifier).log(
-                                type: 'delete',
-                                entityType: 'task',
-                                entityTitle: todo.title,
+                      return ReorderableDragStartListener(
+                        key: ValueKey('todo_${todo.id}'),
+                        index: i,
+                        child: _TodoCard(
+                          todo: todo,
+                          onToggle: () {
+                            HapticFeedback.lightImpact();
+                            if (!todo.isCompleted && todo.remindAt != null) {
+                              ref.read(notificationServiceProvider).cancelReminder(todo.id);
+                            } else if (todo.isCompleted &&
+                                todo.remindAt != null &&
+                                todo.remindAt!.isAfter(DateTime.now())) {
+                              ref.read(notificationServiceProvider).scheduleTodoReminder(
+                                id: todo.id,
+                                title: 'Todo Reminder',
+                                body: todo.title,
+                                scheduledDate: todo.remindAt!,
+                                alertMode: ref.read(notificationPreferencesProvider).alertMode,
                               );
                             }
-                            messenger.hideCurrentSnackBar();
-                          });
-                          
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: const Text('Todo deleted'),
-                              duration: const Duration(seconds: 3),
-                              action: SnackBarAction(
-                                label: 'UNDO',
-                                onPressed: () {
-                                  undone = true;
-                                  timer.cancel();
-                                  messenger.hideCurrentSnackBar();
-                                  hiddenNotifier.update((state) {
-                                    final s = {...state};
-                                    s.remove(itemKey);
-                                    return s;
-                                  });
-                                },
+                            ref.read(databaseProvider).toggleTodo(todo.id, !todo.isCompleted);
+                            ref.read(activityLogProvider.notifier).log(
+                              type: 'update',
+                              entityType: 'task',
+                              entityTitle: todo.title,
+                            );
+                          },
+                          onDelete: () {
+                            final itemKey = 'todo_${todo.id}';
+                            final db = ref.read(databaseProvider);
+                            final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
+                            final notif = ref.read(notificationServiceProvider);
+                            final messenger = ScaffoldMessenger.of(context);
+                            
+                            hiddenNotifier.update((state) => {...state, itemKey});
+                            messenger.clearSnackBars();
+                            
+                            bool undone = false;
+                            final timer = Timer(const Duration(seconds: 3), () async {
+                              if (!undone) {
+                                await notif.cancelReminder(todo.id);
+                                await db.deleteTodo(todo.id);
+                                hiddenNotifier.update((state) {
+                                  final s = {...state};
+                                  s.remove(itemKey);
+                                  return s;
+                                });
+                                ref.read(activityLogProvider.notifier).log(
+                                  type: 'delete',
+                                  entityType: 'task',
+                                  entityTitle: todo.title,
+                                );
+                              }
+                              messenger.hideCurrentSnackBar();
+                            });
+                            
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: const Text('Todo deleted'),
+                                duration: const Duration(seconds: 3),
+                                action: SnackBarAction(
+                                  label: 'UNDO',
+                                  onPressed: () {
+                                    undone = true;
+                                    timer.cancel();
+                                    messenger.hideCurrentSnackBar();
+                                    hiddenNotifier.update((state) {
+                                      final s = {...state};
+                                      s.remove(itemKey);
+                                      return s;
+                                    });
+                                  },
+                                ),
                               ),
-                            ),
-                          );
-                        },
-                        onEdit: () => _showAddEditSheet(context, ref, todo: todo),
-                      ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
+                            );
+                          },
+                          onEdit: () => _showAddEditSheet(context, ref, todo: todo),
+                        ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms),
+                      );
                     },
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(child: Text('Error: $e')),
+                error: (e, _) => Center(
+                    child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.error_outline_rounded, size: 48,
+                          color: Theme.of(context).colorScheme.error),
+                      const SizedBox(height: 12),
+                      const Text('Could not load tasks'),
+                    ],
+                  ),
+                )),
               ),
             ),
           ],
@@ -291,6 +353,17 @@ class _TodoCard extends ConsumerWidget {
     }
   }
 
+  List<String> _parseTags(String? tagsJson) {
+    if (tagsJson == null || tagsJson.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(tagsJson);
+      if (decoded is List) return decoded.cast<String>();
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
@@ -303,6 +376,8 @@ class _TodoCard extends ConsumerWidget {
     final subTasks = subTasksAsync.valueOrNull ?? [];
 
     final totalFocusSeconds = ref.watch(totalFocusTimeProvider(todo.id));
+
+    final todoTags = _parseTags(todo.tags);
 
     int completedSubTasks =
         subTasks.where((st) => st.isCompleted == true).length;
@@ -327,6 +402,29 @@ class _TodoCard extends ConsumerWidget {
           size: 28,
         ),
       ),
+      confirmDismiss: (direction) async {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Delete task?'),
+            content: Text('Delete "${todo.title}"?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        );
+        return confirmed ?? false;
+      },
       onDismissed: (_) => onDelete(),
       child: Padding(
         padding: const EdgeInsets.only(bottom: 12),
@@ -336,23 +434,47 @@ class _TodoCard extends ConsumerWidget {
             borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
             boxShadow: [
               BoxShadow(
-                color: theme.shadowColor.withValues(alpha: 0.05),
-                blurRadius: 10,
+                color: theme.shadowColor.withValues(alpha: 0.06),
+                blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
             ],
             border: Border.all(
-              color:
-                  todo.isCompleted
-                      ? AppColors.success.withValues(alpha: 0.3)
-                      : theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+              color: todo.isCompleted
+                  ? AppColors.success.withValues(alpha: 0.25)
+                  : theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
               width: 1,
             ),
           ),
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: onToggle,
+              onTap: () {
+                if (todo.isCompleted) {
+                  onToggle();
+                } else {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Complete task?'),
+                      content: Text('Mark "${todo.title}" as completed?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Cancel'),
+                        ),
+                        FilledButton(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            onToggle();
+                          },
+                          child: const Text('Complete'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              },
               borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
@@ -360,20 +482,34 @@ class _TodoCard extends ConsumerWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Priority Indicator Bar
-                      if (todo.priority > 0)
-                        Container(width: 4, color: _priorityColor()),
+                      // ── Left Accent Bar (Variant E style) ──
+                      Container(
+                        width: 5,
+                        decoration: BoxDecoration(
+                          color: todo.isCompleted
+                              ? AppColors.success
+                              : todo.priority > 0
+                                  ? _priorityColor()
+                                  : theme.colorScheme.outlineVariant,
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            bottomLeft: Radius.circular(16),
+                          ),
+                        ),
+                      ),
 
+                      // ── Main Content ──
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // Top row: Checkbox + Title + Action buttons
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Custom Checkbox
+                                  // Custom Checkbox (rounded, 24x24)
                                   GestureDetector(
                                     onTap: onToggle,
                                     child: Container(
@@ -384,31 +520,28 @@ class _TodoCard extends ConsumerWidget {
                                       width: 24,
                                       height: 24,
                                       decoration: BoxDecoration(
-                                        color:
-                                            todo.isCompleted
-                                                ? AppColors.success
-                                                : theme.colorScheme.surface,
+                                        color: todo.isCompleted
+                                            ? AppColors.success
+                                            : Colors.transparent,
                                         border: Border.all(
-                                          color:
-                                              todo.isCompleted
-                                                  ? AppColors.success
-                                                  : theme.colorScheme.outline,
+                                          color: todo.isCompleted
+                                              ? AppColors.success
+                                              : theme.colorScheme.outline,
                                           width: 2,
                                         ),
-                                        borderRadius: BorderRadius.circular(6),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                                      child:
-                                          todo.isCompleted
-                                              ? const Icon(
-                                                Icons.check_rounded,
-                                                size: 16,
-                                                color: Colors.white,
-                                              )
-                                              : null,
+                                      child: todo.isCompleted
+                                          ? const Icon(
+                                              Icons.check_rounded,
+                                              size: 16,
+                                              color: Colors.white,
+                                            )
+                                          : null,
                                     ),
                                   ),
 
-                                  // Task Content
+                                  // Title + Description
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
@@ -416,107 +549,31 @@ class _TodoCard extends ConsumerWidget {
                                       children: [
                                         Text(
                                           todo.title,
-                                          style: AppTypography.bodyLarge
-                                              .copyWith(
-                                                color:
-                                                    todo.isCompleted
-                                                        ? theme
-                                                            .colorScheme
-                                                            .onSurfaceVariant
-                                                        : theme
-                                                            .colorScheme
-                                                            .onSurface,
-                                                fontWeight: FontWeight.w600,
-                                                decoration:
-                                                    todo.isCompleted
-                                                        ? TextDecoration
-                                                            .lineThrough
-                                                        : null,
-                                              ),
+                                          style: AppTypography.bodyLarge.copyWith(
+                                            color: todo.isCompleted
+                                                ? theme.colorScheme.onSurfaceVariant
+                                                : theme.colorScheme.onSurface,
+                                            fontWeight: FontWeight.w600,
+                                            decoration: todo.isCompleted
+                                                ? TextDecoration.lineThrough
+                                                : null,
+                                          ),
                                         ),
                                         if (todo.description != null &&
                                             todo.description!.isNotEmpty) ...[
-                                          const SizedBox(height: 6),
+                                          const SizedBox(height: 4),
                                           Text(
                                             todo.description!,
-                                            style: AppTypography.bodyMedium
-                                                .copyWith(
-                                                  color:
-                                                      theme
-                                                          .colorScheme
-                                                          .onSurfaceVariant,
-                                                  decoration:
-                                                      todo.isCompleted
-                                                          ? TextDecoration
-                                                              .lineThrough
-                                                          : null,
-                                                  height: 1.4,
-                                                ),
+                                            style: AppTypography.bodyMedium.copyWith(
+                                              color: theme
+                                                  .colorScheme.onSurfaceVariant,
+                                              decoration: todo.isCompleted
+                                                  ? TextDecoration.lineThrough
+                                                  : null,
+                                              height: 1.4,
+                                            ),
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
-
-                                        // Tags & Date
-                                        if (todo.dueDate != null ||
-                                            todo.remindAt != null ||
-                                            todo.category != null ||
-                                            todo.priority > 0 ||
-                                            totalFocusSeconds > 0) ...[
-                                          const SizedBox(height: 12),
-                                          Wrap(
-                                            spacing: 8,
-                                            runSpacing: 8,
-                                            children: [
-                                              if (totalFocusSeconds > 0)
-                                                _ModernChip(
-                                                  icon: Icons.timer_outlined,
-                                                  label:
-                                                      '${(totalFocusSeconds / 60).ceil()}m',
-                                                  color: AppColors.warning,
-                                                ),
-                                              if (todo.priority > 0)
-                                                _ModernChip(
-                                                  icon: Icons.flag_rounded,
-                                                  label: _priorityLabel(),
-                                                  color: _priorityColor(),
-                                                ),
-                                              if (todo.category != null)
-                                                _ModernChip(
-                                                  icon: Icons.folder_outlined,
-                                                  label: todo.category!,
-                                                  color:
-                                                      theme.colorScheme.primary,
-                                                ),
-                                              if (todo.dueDate != null)
-                                                _ModernChip(
-                                                  icon:
-                                                      isOverdue
-                                                          ? Icons
-                                                              .warning_rounded
-                                                          : Icons
-                                                              .calendar_today_rounded,
-                                                  label: DateFormat(
-                                                    'MMM d, h:mm a',
-                                                  ).format(todo.dueDate!),
-                                                  color:
-                                                      isOverdue
-                                                          ? AppColors.error
-                                                          : theme
-                                                              .colorScheme
-                                                              .onSurfaceVariant,
-                                                  isOutlined: true,
-                                                ),
-                                              if (todo.remindAt != null)
-                                                _ModernChip(
-                                                  icon: Icons.notifications_active_rounded,
-                                                  label: DateFormat(
-                                                    'MMM d, h:mm a',
-                                                  ).format(todo.remindAt!),
-                                                  color: AppColors.warning,
-                                                  isOutlined: true,
-                                                ),
-                                            ],
                                           ),
                                         ],
                                       ],
@@ -525,190 +582,263 @@ class _TodoCard extends ConsumerWidget {
                                 ],
                               ),
 
-                              const SizedBox(height: 10),
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
+                              // ── Footer Row: Chips (left) + Action Buttons (right) ──
+                              if (todo.dueDate != null ||
+                                  todo.remindAt != null ||
+                                  todo.category != null ||
+                                  todo.priority > 0 ||
+                                  totalFocusSeconds > 0 ||
+                                  todoTags.isNotEmpty ||
+                                  totalSubTasks > 0) ...[
+                                const SizedBox(height: 10),
+                                Row(
                                   children: [
-                                    IconButton(
-                                      icon: const Icon(Icons.timer_outlined),
-                                      color: AppColors.warning,
-                                      onPressed: () {
-                                        showDialog(
-                                          context: context,
-                                          builder:
-                                              (context) =>
-                                                  TodoTimerDialog(todo: todo),
-                                        );
-                                      },
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(),
-                                      iconSize: 20,
-                                      tooltip: 'Start Focus',
-                                    ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      icon: const Icon(Icons.edit_rounded),
-                                      color: theme.colorScheme.primary,
-                                      onPressed: onEdit,
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(),
-                                      iconSize: 20,
-                                      tooltip: 'Edit task',
-                                    ),
-                                    const SizedBox(width: 8),
-                                    IconButton(
-                                      icon: const Icon(
-                                        Icons.delete_outline_rounded,
+                                    // Left side: Chips
+                                    Expanded(
+                                      child: Wrap(
+                                        spacing: 6,
+                                        runSpacing: 6,
+                                        children: [
+                                          if (totalFocusSeconds > 0)
+                                            _ModernChip(
+                                              icon: Icons.timer_outlined,
+                                              label: '${(totalFocusSeconds / 60).ceil()}m',
+                                              color: AppColors.warning,
+                                            ),
+                                          if (todo.priority > 0)
+                                            _ModernChip(
+                                              icon: Icons.flag_rounded,
+                                              label: _priorityLabel(),
+                                              color: _priorityColor(),
+                                            ),
+                                          if (todo.category != null)
+                                            _ModernChip(
+                                              icon: Icons.folder_outlined,
+                                              label: todo.category!,
+                                              color: theme.colorScheme.primary,
+                                            ),
+                                          if (todo.dueDate != null)
+                                            _ModernChip(
+                                              icon: isOverdue
+                                                  ? Icons.warning_rounded
+                                                  : Icons.calendar_today_rounded,
+                                              label: DateFormat('MMM d, h:mm a')
+                                                  .format(todo.dueDate!),
+                                              color: isOverdue
+                                                  ? AppColors.error
+                                                  : theme.colorScheme.onSurfaceVariant,
+                                              isOutlined: true,
+                                            ),
+                                          if (todo.remindAt != null)
+                                            _ModernChip(
+                                              icon: Icons.notifications_active_rounded,
+                                              label: DateFormat('MMM d, h:mm a')
+                                                  .format(todo.remindAt!),
+                                              color: AppColors.warning,
+                                              isOutlined: true,
+                                            ),
+                                          ...todoTags.map(
+                                            (tag) => _ModernChip(
+                                              icon: Icons.label_rounded,
+                                              label: tag,
+                                              color: AppColors.info,
+                                              isOutlined: true,
+                                            ),
+                                          ),
+                                          // Subtask count chip
+                                          if (totalSubTasks > 0)
+                                            _ModernChip(
+                                              icon: Icons.account_tree_rounded,
+                                              label: '$completedSubTasks/$totalSubTasks',
+                                              color: progress == 1.0
+                                                  ? AppColors.success
+                                                  : AppColors.primary,
+                                            ),
+                                        ],
                                       ),
-                                      color: AppColors.error,
-                                      onPressed: onDelete,
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(),
-                                      iconSize: 20,
-                                      tooltip: 'Delete task',
+                                    ),
+
+                                    // Right side: Action buttons
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.drag_indicator_rounded),
+                                          color: theme.colorScheme.onSurfaceVariant,
+                                          onPressed: () {},
+                                          padding: const EdgeInsets.all(4),
+                                          constraints: const BoxConstraints(),
+                                          iconSize: 20,
+                                          tooltip: 'Drag to reorder',
+                                        ),
+                                        const SizedBox(width: 4),
+                                        IconButton(
+                                          icon: const Icon(Icons.timer_outlined),
+                                          color: AppColors.warning,
+                                          onPressed: () {
+                                            showDialog(
+                                              context: context,
+                                              builder: (context) =>
+                                                  TodoTimerDialog(todo: todo),
+                                            );
+                                          },
+                                          padding: const EdgeInsets.all(4),
+                                          constraints: const BoxConstraints(),
+                                          iconSize: 20,
+                                          tooltip: 'Start Focus',
+                                        ),
+                                        const SizedBox(width: 4),
+                                        IconButton(
+                                          icon: const Icon(Icons.edit_rounded),
+                                          color: theme.colorScheme.primary,
+                                          onPressed: onEdit,
+                                          padding: const EdgeInsets.all(4),
+                                          constraints: const BoxConstraints(),
+                                          iconSize: 20,
+                                          tooltip: 'Edit task',
+                                        ),
+                                        const SizedBox(width: 4),
+                                        IconButton(
+                                          icon: const Icon(
+                                            Icons.delete_outline_rounded,
+                                          ),
+                                          color: AppColors.error,
+                                          onPressed: () {
+                                            showDialog(
+                                              context: context,
+                                              builder: (ctx) => AlertDialog(
+                                                title: const Text('Delete task?'),
+                                                content: Text('Delete "${todo.title}"?'),
+                                                actions: [
+                                                  TextButton(
+                                                    onPressed: () => Navigator.pop(ctx),
+                                                    child: const Text('Cancel'),
+                                                  ),
+                                                  FilledButton(
+                                                    style: FilledButton.styleFrom(
+                                                      backgroundColor: AppColors.error,
+                                                    ),
+                                                    onPressed: () {
+                                                      Navigator.pop(ctx);
+                                                      onDelete();
+                                                    },
+                                                    child: const Text('Delete'),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          },
+                                          padding: const EdgeInsets.all(4),
+                                          constraints: const BoxConstraints(),
+                                          iconSize: 20,
+                                          tooltip: 'Delete task',
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
-                              ),
+                              ],
 
-                              // Subtasks Section
+                              // ── Subtasks Section (Variant E Kanban-style Pills) ──
                               if (totalSubTasks > 0) ...[
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 14),
+                                // Thin separator
                                 Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: theme
-                                        .colorScheme
-                                        .surfaceContainerHighest
-                                        .withValues(alpha: 0.3),
-                                    borderRadius: BorderRadius.circular(
-                                      AppDimensions.radiusMd,
-                                    ),
-                                    border: Border.all(
-                                      color: theme.colorScheme.outlineVariant
-                                          .withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.account_tree_rounded,
-                                            size: 16,
-                                            color:
-                                                theme
-                                                    .colorScheme
-                                                    .onSurfaceVariant,
+                                  height: 1,
+                                  color: theme.colorScheme.outlineVariant
+                                      .withValues(alpha: 0.5),
+                                ),
+                                const SizedBox(height: 12),
+                                // Subtask Kanban-style pills
+                                ...List.generate(totalSubTasks, (index) {
+                                  final st = subTasks[index];
+                                  final isStCompleted = st.isCompleted == true;
+
+                                  return GestureDetector(
+                                    onTap: () {
+                                      HapticFeedback.lightImpact();
+                                      ref
+                                          .read(databaseProvider)
+                                          .toggleSubTask(st.id, !isStCompleted);
+                                    },
+                                    behavior: HitTestBehavior.opaque,
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: isStCompleted
+                                              ? AppColors.success
+                                                  .withValues(alpha: 0.04)
+                                              : theme.colorScheme.surfaceContainerHighest
+                                                  .withValues(alpha: 0.2),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: theme
+                                                .colorScheme.outlineVariant
+                                                .withValues(alpha: 0.4),
                                           ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            'Subtasks (/)',
-                                            style: AppTypography.labelMedium
-                                                .copyWith(
-                                                  color:
-                                                      theme
-                                                          .colorScheme
-                                                          .onSurfaceVariant,
-                                                  fontWeight: FontWeight.w600,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            // Small rounded checkbox
+                                            Container(
+                                              width: 16,
+                                              height: 16,
+                                              decoration: BoxDecoration(
+                                                color: isStCompleted
+                                                    ? AppColors.success
+                                                    : Colors.transparent,
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                                border: Border.all(
+                                                  color: isStCompleted
+                                                      ? AppColors.success
+                                                      : theme
+                                                          .colorScheme.outline,
+                                                  width: 1.5,
                                                 ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(4),
-                                              child: LinearProgressIndicator(
-                                                value: progress,
-                                                minHeight: 6,
-                                                backgroundColor:
-                                                    theme
-                                                        .colorScheme
-                                                        .outlineVariant,
-                                                color:
-                                                    progress == 1.0
-                                                        ? AppColors.success
-                                                        : AppColors.primary,
                                               ),
+                                              child: isStCompleted
+                                                  ? const Icon(
+                                                      Icons.check_rounded,
+                                                      size: 11,
+                                                      color: Colors.white,
+                                                    )
+                                                  : null,
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 12),
-                                      ...List.generate(totalSubTasks, (index) {
-                                        final st = subTasks[index];
-                                        final isStCompleted = st.isCompleted;
-                                        return GestureDetector(
-                                          onTap: () {
-                                            HapticFeedback.lightImpact();
-                                            ref
-                                                .read(databaseProvider)
-                                                .toggleSubTask(
-                                                  st.id,
-                                                  !isStCompleted,
-                                                );
-                                          },
-                                          behavior: HitTestBehavior.opaque,
-                                          child: Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 8.0,
-                                            ),
-                                            child: Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Container(
-                                                  margin: const EdgeInsets.only(
-                                                    top: 2,
-                                                  ),
-                                                  child: Icon(
-                                                    isStCompleted
-                                                        ? Icons
-                                                            .check_circle_rounded
-                                                        : Icons
-                                                            .radio_button_unchecked_rounded,
-                                                    size: 18,
-                                                    color:
-                                                        isStCompleted
-                                                            ? AppColors.success
-                                                            : theme
-                                                                .colorScheme
-                                                                .outline,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 10),
-                                                Expanded(
-                                                  child: Text(
-                                                    st.title,
-                                                    style: AppTypography.bodyMedium.copyWith(
-                                                      color:
-                                                          isStCompleted
-                                                              ? theme
-                                                                  .colorScheme
-                                                                  .onSurfaceVariant
-                                                              : theme
-                                                                  .colorScheme
-                                                                  .onSurface,
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Text(
+                                                st.title,
+                                                style: AppTypography.bodyMedium
+                                                    .copyWith(
+                                                      color: isStCompleted
+                                                          ? theme
+                                                              .colorScheme
+                                                              .onSurfaceVariant
+                                                          : theme
+                                                              .colorScheme
+                                                              .onSurface,
                                                       decoration:
                                                           isStCompleted
                                                               ? TextDecoration
                                                                   .lineThrough
                                                               : null,
+                                                      fontSize: 13,
                                                     ),
-                                                  ),
-                                                ),
-                                              ],
+                                              ),
                                             ),
-                                          ),
-                                        );
-                                      }),
-                                    ],
-                                  ),
-                                ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                }),
                               ],
                             ],
                           ),
@@ -781,10 +911,12 @@ class _AddEditTodoSheet extends ConsumerStatefulWidget {
 class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
+  final _tagController = TextEditingController();
   DateTime? _dueDate;
   DateTime? _remindAt;
   int _priority = 0;
   String? _category;
+  List<String> _tags = [];
 
   final List<Map<String, dynamic>> _subTasks = [];
 
@@ -798,9 +930,32 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
       _remindAt = widget.todo!.remindAt;
       _priority = widget.todo!.priority;
       _category = widget.todo!.category;
+      _tags = _parseTagsFromJson(widget.todo!.tags);
 
       _loadSubTasks();
     }
+  }
+
+  List<String> _parseTagsFromJson(String? tagsJson) {
+    if (tagsJson == null || tagsJson.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(tagsJson);
+      if (decoded is List) return decoded.cast<String>();
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void _addTag(String tag) {
+    final trimmed = tag.trim();
+    if (trimmed.isEmpty || _tags.contains(trimmed)) return;
+    setState(() => _tags.add(trimmed));
+    _tagController.clear();
+  }
+
+  void _removeTag(int index) {
+    setState(() => _tags.removeAt(index));
   }
 
   Future<void> _loadSubTasks() async {
@@ -823,11 +978,17 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
   void dispose() {
     _titleController.dispose();
     _descController.dispose();
+    _tagController.dispose();
     super.dispose();
   }
 
   void _save() async {
     if (_titleController.text.trim().isEmpty) return;
+
+    // Capture any pending tag text before saving
+    if (_tagController.text.trim().isNotEmpty) {
+      _addTag(_tagController.text);
+    }
 
     final db = ref.read(databaseProvider);
     final companion = TodosCompanion(
@@ -837,6 +998,7 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
       remindAt: Value(_remindAt),
       priority: Value(_priority),
       category: Value(_category),
+      tags: Value(jsonEncode(_tags)),
     );
 
     int todoId;
@@ -1176,7 +1338,93 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
               },
             ),
 
-            const SizedBox(height: 12),
+            // Tags Section
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Tags',
+                  style: AppTypography.labelLarge.copyWith(
+                    color: theme.colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_tags.isNotEmpty) ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: List.generate(_tags.length, (index) {
+                  return Chip(
+                    label: Text(
+                      _tags[index],
+                      style: AppTypography.labelSmall.copyWith(
+                        color: theme.colorScheme.onSecondaryContainer,
+                      ),
+                    ),
+                    deleteIcon: const Icon(Icons.close_rounded, size: 16),
+                    onDeleted: () => _removeTag(index),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    backgroundColor:
+                        AppColors.info.withValues(alpha: 0.12),
+                    side: BorderSide.none,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    labelPadding: const EdgeInsets.only(left: 4),
+                  );
+                }),
+              ),
+              const SizedBox(height: 8),
+            ],
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _tagController,
+                    style: AppTypography.bodyMedium,
+                    decoration: InputDecoration(
+                      hintText: 'Add a tag...',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.outlineVariant,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(
+                          color: theme.colorScheme.outlineVariant,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: AppColors.primary),
+                      ),
+                    ),
+                    onSubmitted: _addTag,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filled(
+                  onPressed: () => _addTag(_tagController.text),
+                  icon: const Icon(Icons.add_rounded, size: 20),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 20),
             Text(
               'Priority',
               style: AppTypography.labelLarge.copyWith(
@@ -1292,30 +1540,34 @@ class _PriorityChip extends StatelessWidget {
 
 class _EmptyState extends StatelessWidget {
   final TodoFilter filter;
-  const _EmptyState({required this.filter});
+  final String searchQuery;
+
+  const _EmptyState({required this.filter, this.searchQuery = ''});
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isSearching = searchQuery.isNotEmpty;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.task_alt_rounded,
+            isSearching ? Icons.search_off_rounded : Icons.task_alt_rounded,
             size: 64,
             color: theme.colorScheme.surfaceContainerHighest,
           ),
           const SizedBox(height: 16),
           Text(
-            'All caught up!',
+            isSearching ? 'No matching tasks' : 'All caught up!',
             style: AppTypography.headingMedium.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Add some tasks to get started',
+            isSearching ? 'Try a different search term' : 'Add some tasks to get started',
             style: AppTypography.bodyMedium.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
