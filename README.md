@@ -39,23 +39,6 @@ Me++ is designed to keep your personal data local, secure, and fast:
 
 ---
 
-## GitHub Release & Auto-Updates
-
-Me++ supports automated release workflows and in-app update checks:
-
-### 🚀 GitHub Actions Release
-The project includes a GitHub action in `.github/workflows/build_apk.yml` that triggers:
-1. **On git tag pushes** (e.g. `git tag v1.0.0` followed by `git push origin v1.0.0`).
-2. **On manual triggers (Workflow Dispatch)**, where you can type in a custom tag name.
-
-The workflow compiles the code, signs the production release APK, creates a matching **GitHub Release**, and attaches the built `app-release.apk` asset.
-
-### 📱 In-App Auto-Update Checker
-Whenever Me++ is opened:
-1. It queries the GitHub Release API endpoint for the latest release tag.
-2. If a newer version is found, it prompts you with a modern upgrade dialog displaying the latest release notes and a direct download button.
-
----
 
 ## Getting Started
 
