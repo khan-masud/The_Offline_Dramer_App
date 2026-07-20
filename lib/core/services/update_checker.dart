@@ -6,8 +6,8 @@ import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
 
 class UpdateChecker {
-  static const String currentVersion = '4.0.0';
-  static const String githubRepo = 'khan-masud/The_Offline_Dramer_App';
+  static const String currentVersion = '1.0.0';
+  static const String githubRepo = 'khan-masud/me-plus-plus';
 
   static Future<void> checkForUpdates(BuildContext context) async {
     try {
@@ -23,7 +23,7 @@ class UpdateChecker {
 
       if (latestTag.isEmpty) return;
 
-      // Clean prefix 'v' if present (e.g. 'v4.0.1' -> '4.0.1')
+      // Clean prefix 'v' if present (e.g. 'v1.0.1' -> '1.0.1')
       final latestVer = latestTag.startsWith('v') ? latestTag.substring(1) : latestTag;
 
       if (_isVersionNewer(currentVersion, latestVer)) {

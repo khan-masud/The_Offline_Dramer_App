@@ -1,107 +1,93 @@
-# The Offline Dreamer (TOD)
+﻿# Me++
 
-The Offline Dreamer (TOD) is a privacy-focused, offline-first personal life management app built with Flutter. It combines tasks, routines, notes, finance, birthdays, contacts, and utilities in one app.
+Me++ is a privacy-focused, offline-first personal life management and optimization assistant built with Flutter. It combines task management, routines, notes, finance, birthdays, local contact lists, and utility integrations into one cohesive dashboard.
 
 ## Overview
 
-TOD is designed to keep your personal data local and responsive:
+Me++ is designed to keep your personal data local, secure, and fast:
 
-- Offline-first architecture using Drift (SQLite)
-- Fast local-first workflows
-- Built-in reminders and scheduling
-- Manual full backup and restore support
+- **Offline-First Architecture**: Powered by Drift (SQLite) for ultra-fast local database operations.
+- **Privacy Guaranteed**: Your records remain on your device. Backup and sync operations are explicitly initiated by the user.
+- **Rich Dashboard Insights**: Real-time stats on completed tasks, budgets, and habits.
+- **Intelligent Reminders**: Fully local background alerts for birthdays, habits, routines, and pending item digests.
 
 ## Features
 
-### Dashboard and Daily Overview
+### 📊 Dashboard & Overview
+- Greeting card with active user profile name and image.
+- Weather timeline showing live temperature and conditions using your own WeatherAPI.com API key (configurable in Settings).
+- Real-time productivity overview stats and interactive quick actions.
 
-- Daily summary for tasks, routines, and activity
-- Weather timeline and condition visuals
-- Quick app shortcuts
+### 📝 Tasks & Routines
+- Advanced Todo list with drag-and-drop reordering restricted to corresponding priority levels.
+- Routine tracking with custom streak counters, recurrence frequencies, priority levels, and subtasks.
+- Auto-tag suggestions tracking the 5 most recently used labels.
 
-### Tasks and Routines
+### 💰 Money & Debts
+- Income and expense transaction ledger with category tracking.
+- Monthly budget allocation limits.
+- Lent/Borrowed debt tracker with optional Wallet Integration. Adding installment payments automatically records cash ledger logs, and settling a debt handles the remaining unpaid balances cleanly.
 
-- Task list with filters (All, Pending, Done)
-- Routine tracking with priorities, subtasks, and streaks
-- Reminder scheduling and startup re-scheduling
+### 📓 Notes & Links
+- Category folders with custom background colors.
+- Markdown editor with full zoomable image preview/save options.
+- Dynamic web link manager supporting external share-intent ingestion (no password prompts required for quick saves).
 
-### Money and Debts
+### 🎂 Birthday Calendar
+- Timezone-safe birthday notifications scheduled 24 hours before and/or on the day itself.
+- Visual birthday indicators directly on the interactive calendar.
 
-- Income and expense transaction tracking
-- Monthly budget management
-- Debt tools for lent/borrowed tracking
-- Quick actions section with popup calculator and debt shortcut
+---
 
-### Notes and Links
+## GitHub Release & Auto-Updates
 
-- Rich notes editor with markdown preview
-- Folder and color organization
-- Link manager with folder grouping and quick save/share flow
+Me++ supports automated release workflows and in-app update checks:
 
-### Birthday Calendar
+### 🚀 GitHub Actions Release
+The project includes a GitHub action in `.github/workflows/build_apk.yml` that triggers:
+1. **On git tag pushes** (e.g. `git tag v1.0.0` followed by `git push origin v1.0.0`).
+2. **On manual triggers (Workflow Dispatch)**, where you can type in a custom tag name.
 
-- Save birthdays once with date of birth
-- Yearly reminder behavior (no need to re-add every year)
-- Optional notifications:
-  - 1 day before at 12:00 AM
-  - Birthday day at 12:00 AM
+The workflow compiles the code, signs the production release APK, creates a matching **GitHub Release**, and attaches the built `app-release.apk` asset.
 
-### Contact List
+### 📱 In-App Auto-Update Checker
+Whenever Me++ is opened:
+1. It queries the GitHub Release API endpoint for the latest release tag.
+2. If a newer version is found, it prompts you with a modern upgrade dialog displaying the latest release notes and a direct download button.
 
-- Save contacts in local database
-- Search, view, edit, copy, and manual add
-- Phone contact import/sync support
-- Monthly sync policy with new-number ingestion
+---
 
-## Backup and Restore
+## Getting Started
 
-TOD includes a manual full backup/restore system from Settings.
+### Prerequisites
+- Flutter SDK (stable channel)
+- Android SDK (for mobile builds)
 
-### What gets backed up
+### Run from Source
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/khan-masud/me-plus-plus.git
+   cd me-plus-plus
+   ```
+2. Setup environment keys:
+   Create a `.env` file in the root directory:
+   ```env
+   WEATHER_API_KEY=your_default_key_here
+   ```
+3. Install dependencies:
+   ```bash
+   flutter pub get
+   ```
+4. Run code generation:
+   ```bash
+   dart run build_runner build --delete-conflicting-outputs
+   ```
+5. Run the application:
+   ```bash
+   flutter run
+   ```
 
-- All Drift database tables (auto discovered)
-- SharedPreferences keys
-- FlutterSecureStorage keys (for example, PIN data)
-- Native app document files (except database files and backup directory itself)
-
-### Dynamic backup behavior
-
-Backup is schema-driven for DB and key-driven for preferences/storage. New tools that store data in DB/prefs/secure storage are automatically included in backup/restore without needing per-feature backup mapping.
-
-### Platform behavior
-
-- Web: backup triggers browser download
-- Native (Android/iOS/desktop): backup is saved in app documents backups folder
-
-### Backup actions
-
-After manual backup (native), quick actions are available:
-
-- Open backup file
-- Open backup folder
-- Share backup file
-
-## Technology Stack
-
-- Framework: Flutter (Dart)
-- State Management: Riverpod
-- Local Database: Drift + SQLite
-- Notifications: flutter_local_notifications + timezone
-- Integrations: share_handler, flutter_contacts, image_picker, image_cropper, url_launcher, geolocator, http
-
-## Run from Source
-
-```bash
-flutter pub get
-flutter run
-```
-
-For release builds:
-
+### Compile Release APK
 ```bash
 flutter build apk --release
 ```
-
-## Privacy
-
-TOD is built as an offline-first app. Your personal records remain on your device unless you explicitly export/backup/share them.
