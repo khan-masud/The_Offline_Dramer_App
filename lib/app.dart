@@ -25,6 +25,7 @@ import 'core/theme/app_dimensions.dart';
 import 'main.dart';
 import 'core/services/share_intent_service.dart';
 import 'features/links/data/links_provider.dart';
+import 'features/links/presentation/screens/links_screen.dart' show fetchUrlTitle;
 
 class TODApp extends ConsumerStatefulWidget {
   const TODApp({super.key});
@@ -44,7 +45,6 @@ class _TODAppState extends ConsumerState<TODApp> {
   }
 
   void _handleUrlShared(String url, String? text) {
-    // If the context is ready, show the save dialog
     final context = globalNavigatorKey.currentContext;
     if (context != null) {
       _showQuickSaveSheet(context, url, text);
@@ -66,7 +66,7 @@ class _TODAppState extends ConsumerState<TODApp> {
 
     return MaterialApp(
       navigatorKey: globalNavigatorKey,
-      title: 'The Offline Dreamer',
+      title: 'Me++',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
@@ -100,12 +100,32 @@ class _QuickSaveSheet extends ConsumerStatefulWidget {
 class _QuickSaveSheetState extends ConsumerState<_QuickSaveSheet> {
   late TextEditingController _titleCtrl;
   String? _selectedFolder;
+  bool _isFetchingTitle = false;
 
   @override
   void initState() {
     super.initState();
     // Auto populate title if possible or leave empty
     _titleCtrl = TextEditingController(text: widget.text == widget.url ? '' : widget.text);
+    // Auto-fetch title from URL if title is empty
+    if (_titleCtrl.text.isEmpty) {
+      _autoFetchTitle();
+    }
+  }
+
+  Future<void> _autoFetchTitle() async {
+    final url = widget.url;
+    if (url.isEmpty) return;
+    setState(() => _isFetchingTitle = true);
+    final title = await fetchUrlTitle(url);
+    if (title != null && mounted && _titleCtrl.text.isEmpty) {
+      setState(() {
+        _titleCtrl.text = title;
+        _isFetchingTitle = false;
+      });
+    } else if (mounted) {
+      setState(() => _isFetchingTitle = false);
+    }
   }
 
   @override
@@ -131,7 +151,16 @@ class _QuickSaveSheetState extends ConsumerState<_QuickSaveSheet> {
           
           TextField(
             controller: _titleCtrl,
-            decoration: const InputDecoration(labelText: 'Title', prefixIcon: Icon(Icons.title)),
+            decoration: InputDecoration(
+              labelText: 'Title',
+              prefixIcon: const Icon(Icons.title),
+              suffixIcon: _isFetchingTitle
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : null,
+            ),
             textCapitalization: TextCapitalization.sentences,
           ),
           const SizedBox(height: 16),
@@ -214,6 +243,22 @@ class _AuthGate extends ConsumerWidget {
         },
       );
     }
+
+    // After auth — check for pending shared URL
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final pendingUrl = ref.read(pendingSharedUrlProvider);
+      if (pendingUrl != null && context.mounted) {
+        final pendingText = ref.read(pendingSharedTextProvider);
+        ref.read(pendingSharedUrlProvider.notifier).state = null;
+        ref.read(pendingSharedTextProvider.notifier).state = null;
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => _QuickSaveSheet(url: pendingUrl, text: pendingText),
+        );
+      }
+    });
 
     // Authenticated or no PIN → show main app
     return const MainShell();

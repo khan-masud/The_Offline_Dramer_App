@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' hide Column;
+import 'package:http/http.dart' as http;
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +15,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
@@ -869,16 +872,28 @@ class _NotePreviewScreenState extends ConsumerState<NotePreviewScreen> {
 
     final desiredHeight = height == null || height <= 0 ? 320.0 : height;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: desiredHeight,
-            maxWidth: width ?? double.infinity,
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => _ImagePreviewScreen(
+              uri: uri,
+              imagePath: imagePath,
+            ),
           ),
-          child: imageWidget,
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: desiredHeight,
+              maxWidth: width ?? double.infinity,
+            ),
+            child: imageWidget,
+          ),
         ),
       ),
     );
@@ -1180,5 +1195,160 @@ class _NotePreviewScreenState extends ConsumerState<NotePreviewScreen> {
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
     return DateFormat('MMM d, yyyy').format(dt);
+  }
+}
+
+class _ImagePreviewScreen extends StatelessWidget {
+  final Uri uri;
+  final String imagePath;
+
+  const _ImagePreviewScreen({required this.uri, required this.imagePath});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: Text(
+          _fileName(uri),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w400),
+        ),
+        actions: [
+          if (!kIsWeb) ...[
+            IconButton(
+              icon: const Icon(Icons.download_rounded),
+              tooltip: 'Save to Device',
+              onPressed: () => _downloadImage(context),
+            ),
+            IconButton(
+              icon: const Icon(Icons.share_rounded),
+              tooltip: 'Share',
+              onPressed: () => _shareImage(context),
+            ),
+          ],
+        ],
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 5.0,
+          child: !kIsWeb && uri.scheme == 'file'
+              ? Image.file(
+                  File(uri.toFilePath()),
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => _errorWidget(theme),
+                )
+              : Image.network(
+                  imagePath,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => _errorWidget(theme),
+                ),
+        ),
+      ),
+    );
+  }
+
+  String _fileName(Uri uri) {
+    if (uri.scheme == 'file') {
+      final segments = uri.pathSegments;
+      return segments.isNotEmpty ? segments.last : 'Image';
+    }
+    return uri.pathSegments.isNotEmpty ? uri.pathSegments.last : 'Image';
+  }
+
+  Future<void> _downloadImage(BuildContext context) async {
+    try {
+      Uint8List bytes;
+      final fileName = _fileName(uri);
+
+      if (uri.scheme == 'file') {
+        final filePath = uri.toFilePath();
+        final file = File(filePath);
+        if (!await file.exists()) {
+          throw Exception('Local file not found');
+        }
+        bytes = await file.readAsBytes();
+      } else {
+        // Network image
+        final response = await http.get(Uri.parse(imagePath));
+        if (response.statusCode == 200) {
+          bytes = response.bodyBytes;
+        } else {
+          throw Exception('Failed to fetch image from network: ${response.statusCode}');
+        }
+      }
+
+      final savedPath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Select where to save image',
+        fileName: fileName,
+        type: FileType.image,
+        bytes: bytes,
+      );
+
+      if (savedPath != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Image saved successfully to: $savedPath')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save image: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _shareImage(BuildContext context) async {
+    try {
+      String? filePath;
+      if (uri.scheme == 'file') {
+        filePath = uri.toFilePath();
+      } else {
+        // Network image, download it to temp first so we can share it
+        final response = await http.get(Uri.parse(imagePath));
+        if (response.statusCode == 200) {
+          final tempDir = await getTemporaryDirectory();
+          final fileName = _fileName(uri);
+          final tempFile = File('${tempDir.path}/$fileName');
+          await tempFile.writeAsBytes(response.bodyBytes);
+          filePath = tempFile.path;
+        }
+      }
+
+      if (filePath == null || !await File(filePath).exists()) {
+        throw Exception('File not found');
+      }
+
+      await Share.shareXFiles([XFile(filePath)], text: 'Image from note');
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not share image: $e')),
+        );
+      }
+    }
+  }
+
+  Widget _errorWidget(ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.broken_image_outlined, size: 64, color: Colors.white54),
+          const SizedBox(height: 16),
+          const Text(
+            'Image not found',
+            style: TextStyle(color: Colors.white54, fontSize: 16),
+          ),
+        ],
+      ),
+    );
   }
 }

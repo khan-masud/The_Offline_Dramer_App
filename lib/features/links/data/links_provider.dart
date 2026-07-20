@@ -38,6 +38,10 @@ final filteredLinksProvider = Provider<AsyncValue<List<Link>>>((ref) {
   });
 });
 
+// Pending shared URL (stored while waiting for auth)
+final pendingSharedUrlProvider = StateProvider<String?>((ref) => null);
+final pendingSharedTextProvider = StateProvider<String?>((ref) => null);
+
 // Pre-seed default folders
 Future<void> seedDefaultLinkFolders(AppDatabase db) async {
   final count = await db.select(db.linkFolders).get();

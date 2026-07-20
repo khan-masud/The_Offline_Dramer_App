@@ -15,6 +15,7 @@ import '../widgets/dashboard_insights.dart';
 import '../widgets/quick_actions.dart';
 import '../widgets/overview_cards.dart';
 import '../widgets/recent_activity.dart';
+import '../../../../core/services/update_checker.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -24,6 +25,14 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      UpdateChecker.checkForUpdates(context);
+    });
+  }
+
   Future<void> _onRefresh() async {
     // Invalidate all dashboard-related providers to trigger refresh
     ref.invalidate(activityLogProvider);

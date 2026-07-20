@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'connection/connection.dart' as conn;
 
@@ -157,6 +158,9 @@ class Debts extends Table {
   TextColumn get phone => text().nullable()();
   DateTimeColumn get dueDate => dateTime().nullable()();
   BoolColumn get isSettled => boolean().withDefault(const Constant(false))();
+  BoolColumn get linkedToWallet => boolean().withDefault(const Constant(false))();
+  IntColumn get linkedTransactionId => integer().nullable()();
+  IntColumn get settlementTransactionId => integer().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 }
@@ -167,6 +171,7 @@ class DebtPayments extends Table {
   RealColumn get amount => real()();
   TextColumn get note => text().nullable()();
   DateTimeColumn get paidAt => dateTime()();
+  IntColumn get linkedTransactionId => integer().nullable()();
 }
 
 // ==================== BIRTHDAYS ====================
@@ -206,7 +211,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(conn.connect());
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -258,6 +263,14 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(birthdays);
         await m.createTable(contactEntries);
       }
+      if (from < 13) {
+        await m.addColumn(debts, debts.linkedToWallet);
+        await m.addColumn(debts, debts.linkedTransactionId);
+        await m.addColumn(debts, debts.settlementTransactionId);
+      }
+      if (from < 14) {
+        await m.addColumn(debtPayments, debtPayments.linkedTransactionId);
+      }
     },
   );
 
@@ -266,6 +279,7 @@ class AppDatabase extends _$AppDatabase {
     final query = select(todos)..orderBy([
       (t) => OrderingTerm.asc(t.isCompleted),
       (t) => OrderingTerm.desc(t.priority),
+      (t) => OrderingTerm.asc(t.sortOrder),
       (t) => OrderingTerm.desc(t.createdAt),
     ]);
     if (completed != null) {
@@ -304,6 +318,27 @@ class AppDatabase extends _$AppDatabase {
         );
       }
     });
+  }
+
+  Future<List<String>> getAllTodoTags() async {
+    final allTodos = await select(todos).get();
+    final Map<String, int> tagCount = {};
+    for (final todo in allTodos) {
+      try {
+        final decoded = jsonDecode(todo.tags);
+        if (decoded is List) {
+          for (final tag in decoded) {
+            final s = tag.toString().trim();
+            if (s.isNotEmpty) {
+              tagCount[s] = (tagCount[s] ?? 0) + 1;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    final sorted = tagCount.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return sorted.take(5).map((e) => e.key).toList();
   }
 
   // === SUB-TASK QUERIES ===
@@ -840,6 +875,187 @@ class AppDatabase extends _$AppDatabase {
       });
     }
 
+    // Focus sessions / timer history in this month
+    final monthFocus = await (select(focusSessions)
+      ..where((f) => f.startTime.isBiggerOrEqualValue(start) & f.startTime.isSmallerThanValue(end))
+    ).get();
+    final focusDayMap = <DateTime, List<Map<String, dynamic>>>{};
+    for (final f in monthFocus) {
+      final day = DateTime(f.startTime.year, f.startTime.month, f.startTime.day);
+      focusDayMap.putIfAbsent(day, () => []).add({
+        'duration': f.durationSeconds,
+        'type': f.sessionType,
+      });
+    }
+    for (final entry in focusDayMap.entries) {
+      final totalMin = entry.value.fold<int>(0, (sum, e) => sum + (e['duration'] as int)) ~/ 60;
+      events.putIfAbsent(entry.key, () => []).add({
+        'type': 'focus',
+        'title': 'Focus: ${totalMin}min (${entry.value.length} session${entry.value.length > 1 ? 's' : ''})',
+        'color': 'teal',
+      });
+    }
+
+    // Debts with due dates in this month
+    final monthDebts = await (select(debts)
+      ..where((d) => d.dueDate.isNotNull() &
+          d.dueDate.isBiggerOrEqualValue(start) &
+          d.dueDate.isSmallerThanValue(end))
+    ).get();
+    for (final d in monthDebts) {
+      final day = DateTime(d.dueDate!.year, d.dueDate!.month, d.dueDate!.day);
+      final label = d.isSettled ? 'Settled' : 'Due';
+      events.putIfAbsent(day, () => []).add({
+        'type': 'debt',
+        'title': 'Debt $label: ${d.personName} ৳${d.amount.toStringAsFixed(0)}',
+        'color': d.isSettled ? 'success' : 'error',
+        'isSettled': d.isSettled,
+      });
+    }
+
+    // Birthdays in this month (use calendar year, not birth year; convert to local timezone)
+    final allBirthdays = await getAllBirthdays();
+    for (final b in allBirthdays) {
+      final localDob = b.dateOfBirth.toLocal();
+      if (localDob.month == month) {
+        final bday = DateTime(year, localDob.month, localDob.day);
+        events.putIfAbsent(bday, () => []).add({
+          'type': 'birthday',
+          'title': "🎂 ${b.personName}'s Birthday",
+          'color': 'pink',
+          'id': b.id,
+        });
+      }
+    }
+
+    return events;
+  }
+
+  // === DAY EVENTS (detailed per-day view) ===
+  Future<List<Map<String, dynamic>>> getDayEvents(DateTime day) async {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    final events = <Map<String, dynamic>>[];
+
+    // Todos due on this day
+    final dayTodos = await (select(todos)
+      ..where((t) => t.dueDate.isNotNull() &
+          t.dueDate.isBiggerOrEqualValue(start) &
+          t.dueDate.isSmallerThanValue(end))
+      ..orderBy([(t) => OrderingTerm.asc(t.sortOrder), (t) => OrderingTerm.desc(t.createdAt)])
+    ).get();
+    for (final t in dayTodos) {
+      events.add({
+        'type': 'todo',
+        'title': t.title,
+        'isCompleted': t.isCompleted,
+        'color': 'primary',
+        'priority': t.priority,
+        'description': t.description,
+      });
+    }
+
+    // Transactions on this day
+    final dayTx = await (select(transactions)
+      ..where((t) => t.date.isBiggerOrEqualValue(start) & t.date.isSmallerThanValue(end))
+      ..orderBy([(t) => OrderingTerm.desc(t.date)])
+    ).get();
+    for (final tx in dayTx) {
+      events.add({
+        'type': 'transaction',
+        'title': tx.title,
+        'amount': tx.amount,
+        'txType': tx.type,
+        'category': tx.category,
+        'color': tx.type == 'income' ? 'success' : 'error',
+      });
+    }
+
+    // Habit completions on this day
+    final dayHabits = await (select(habitCompletions)
+      ..where((c) => c.completedDate.isBiggerOrEqualValue(start) & c.completedDate.isSmallerThanValue(end))
+    ).get();
+    if (dayHabits.isNotEmpty) {
+      final habitIds = dayHabits.map((c) => c.habitId).toSet();
+      final habitNames = <int, String>{};
+      for (final hid in habitIds) {
+        final h = await (select(habits)..where((h) => h.id.equals(hid))).getSingleOrNull();
+        if (h != null) habitNames[hid] = '${h.emoji} ${h.title}';
+      }
+      for (final hc in dayHabits) {
+        events.add({
+          'type': 'habit',
+          'title': habitNames[hc.habitId] ?? 'Habit done',
+          'color': 'purple',
+        });
+      }
+    }
+
+    // Routine completions on this day
+    final dayRoutines = await (select(routineCompletions)
+      ..where((c) => c.completedDate.isBiggerOrEqualValue(start) & c.completedDate.isSmallerThanValue(end))
+    ).get();
+    if (dayRoutines.isNotEmpty) {
+      final itemIds = dayRoutines.map((c) => c.routineItemId).toSet();
+      final itemNames = <int, String>{};
+      for (final iid in itemIds) {
+        final ri = await (select(routineItems)..where((r) => r.id.equals(iid))).getSingleOrNull();
+        if (ri != null) itemNames[iid] = ri.title;
+      }
+      for (final rc in dayRoutines) {
+        events.add({
+          'type': 'routine',
+          'title': itemNames[rc.routineItemId] ?? 'Routine done',
+          'color': 'warning',
+        });
+      }
+    }
+
+    // Focus sessions on this day
+    final dayFocus = await (select(focusSessions)
+      ..where((f) => f.startTime.isBiggerOrEqualValue(start) & f.startTime.isSmallerThanValue(end))
+      ..orderBy([(f) => OrderingTerm.desc(f.startTime)])
+    ).get();
+    for (final f in dayFocus) {
+      final min = f.durationSeconds ~/ 60;
+      final sec = f.durationSeconds % 60;
+      events.add({
+        'type': 'focus',
+        'title': 'Focus: ${min}m ${sec}s',
+        'color': 'teal',
+        'sessionType': f.sessionType,
+      });
+    }
+
+    // Debts due on this day
+    final dayDebts = await (select(debts)
+      ..where((d) => d.dueDate.isNotNull() &
+          d.dueDate.isBiggerOrEqualValue(start) &
+          d.dueDate.isSmallerThanValue(end))
+    ).get();
+    for (final d in dayDebts) {
+      events.add({
+        'type': 'debt',
+        'title': '${d.personName} - ৳${d.amount.toStringAsFixed(0)}',
+        'color': d.isSettled ? 'success' : 'error',
+        'isSettled': d.isSettled,
+      });
+    }
+
+    // Birthdays on this day (convert to local timezone)
+    final allBdays = await getAllBirthdays();
+    for (final b in allBdays) {
+      final localDob = b.dateOfBirth.toLocal();
+      if (localDob.month == day.month && localDob.day == day.day) {
+        events.add({
+          'type': 'birthday',
+          'title': "🎂 ${b.personName}'s Birthday",
+          'color': 'pink',
+          'id': b.id,
+        });
+      }
+    }
+
     return events;
   }
 
@@ -867,6 +1083,16 @@ class AppDatabase extends _$AppDatabase {
       (update(debts)..where((d) => d.id.equals(entry.id.value))).write(entry).then((rows) => rows > 0);
 
   Future<int> deleteDebt(int id) async {
+    // Clean up linked transactions before deleting
+    final debt = await getDebt(id);
+    if (debt != null) {
+      if (debt.linkedTransactionId != null) {
+        await (delete(transactions)..where((t) => t.id.equals(debt.linkedTransactionId!))).go();
+      }
+      if (debt.settlementTransactionId != null) {
+        await (delete(transactions)..where((t) => t.id.equals(debt.settlementTransactionId!))).go();
+      }
+    }
     await (delete(debtPayments)..where((p) => p.debtId.equals(id))).go();
     return (delete(debts)..where((d) => d.id.equals(id))).go();
   }
@@ -886,6 +1112,101 @@ class AppDatabase extends _$AppDatabase {
           updatedAt: Value(DateTime.now()),
         ),
       );
+
+  // === WALLET-LINKED DEBT METHODS ===
+
+  Future<int> addDebtWithWallet(DebtsCompanion entry) async {
+    final debtId = await into(debts).insert(entry);
+    final debt = await getDebt(debtId);
+    if (debt == null) return debtId;
+
+    final now = DateTime.now();
+    final String txCategory;
+    final String txType;
+    if (debt.type == 'given') {
+      txCategory = 'Debt Given';
+      txType = 'expense';
+    } else {
+      txCategory = 'Debt Received';
+      txType = 'income';
+    }
+
+    final txId = await into(transactions).insert(TransactionsCompanion(
+      amount: Value(debt.amount),
+      type: Value(txType),
+      title: Value('Debt — ${debt.personName}'),
+      category: Value(txCategory),
+      note: const Value('Auto-created from debt'),
+      date: Value(now),
+      createdAt: Value(now),
+    ));
+
+    await (update(debts)..where((d) => d.id.equals(debtId))).write(
+      DebtsCompanion(
+        linkedTransactionId: Value(txId),
+        updatedAt: Value(now),
+      ),
+    );
+
+    return debtId;
+  }
+
+  Future<void> settleDebtWithWallet(int debtId) async {
+    final debt = await getDebt(debtId);
+    if (debt == null) return;
+
+    final now = DateTime.now();
+    final remainingAmount = debt.amount - debt.paidAmount;
+    final String txCategory;
+    final String txType;
+    if (debt.type == 'given') {
+      txCategory = 'Debt Settled';
+      txType = 'income';
+    } else {
+      txCategory = 'Debt Repaid';
+      txType = 'expense';
+    }
+
+    // Only create a settlement transaction if there is still an outstanding balance
+    int? txId;
+    if (remainingAmount > 0) {
+      txId = await into(transactions).insert(TransactionsCompanion(
+        amount: Value(remainingAmount),
+        type: Value(txType),
+        title: Value('Debt Settled — ${debt.personName}'),
+        category: Value(txCategory),
+        note: const Value('Auto-created on debt settlement'),
+        date: Value(now),
+        createdAt: Value(now),
+      ));
+    }
+
+    await (update(debts)..where((d) => d.id.equals(debtId))).write(
+      DebtsCompanion(
+        isSettled: const Value(true),
+        settlementTransactionId: Value(txId),
+        updatedAt: Value(now),
+      ),
+    );
+  }
+
+  Future<void> unsettleDebtWithWallet(int debtId) async {
+    final debt = await getDebt(debtId);
+    if (debt == null) return;
+
+    // Delete the settlement transaction
+    if (debt.settlementTransactionId != null) {
+      await (delete(transactions)..where((t) => t.id.equals(debt.settlementTransactionId!))).go();
+    }
+
+    await (update(debts)..where((d) => d.id.equals(debtId))).write(
+      DebtsCompanion(
+        isSettled: const Value(false),
+        settlementTransactionId: const Value(null),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
+  }
 
   // Payments
   Stream<List<DebtPayment>> watchDebtPayments(int debtId) {
@@ -910,11 +1231,36 @@ class AppDatabase extends _$AppDatabase {
           updatedAt: Value(DateTime.now()),
         ),
       );
+
+      // If debt is linked to wallet, create a corresponding transaction
+      if (debt.linkedToWallet) {
+        final now = DateTime.now();
+        final txType = debt.type == 'given' ? 'income' : 'expense';
+        final txCategory = debt.type == 'given' ? 'Debt Payment Received' : 'Debt Payment Made';
+        final txId = await into(transactions).insert(TransactionsCompanion(
+          amount: Value(entry.amount.value),
+          type: Value(txType),
+          title: Value('Debt Payment — ${debt.personName}'),
+          category: Value(txCategory),
+          note: Value(entry.note.value),
+          date: Value(entry.paidAt.value),
+          createdAt: Value(now),
+        ));
+        // Link the transaction back to this payment
+        await (update(debtPayments)..where((p) => p.id.equals(paymentId))).write(
+          DebtPaymentsCompanion(linkedTransactionId: Value(txId)),
+        );
+      }
     }
     return paymentId;
   }
 
   Future<int> deleteDebtPayment(int paymentId, int debtId) async {
+    // Delete linked wallet transaction if present
+    final payment = await (select(debtPayments)..where((p) => p.id.equals(paymentId))).getSingleOrNull();
+    if (payment?.linkedTransactionId != null) {
+      await (delete(transactions)..where((t) => t.id.equals(payment!.linkedTransactionId!))).go();
+    }
     final result = await (delete(debtPayments)..where((p) => p.id.equals(paymentId))).go();
     // Recalculate paid amount
     final payments = await (select(debtPayments)..where((p) => p.debtId.equals(debtId))).get();

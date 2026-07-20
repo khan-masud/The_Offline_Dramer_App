@@ -190,6 +190,8 @@ class _AppWithStartupTasksState extends ConsumerState<_AppWithStartupTasks> {
       await notif.rescheduleAllBirthdayReminders(
         birthdays: birthdays,
         alertMode: prefs.alertMode,
+        hour: prefs.birthdayReminderTime.hour,
+        minute: prefs.birthdayReminderTime.minute,
       );
 
       await notif.rescheduleAllTodoReminders(

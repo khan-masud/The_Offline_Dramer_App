@@ -97,8 +97,8 @@ class _LockScreenState extends ConsumerState<LockScreen> with SingleTickerProvid
               ).animate().fadeIn(duration: 600.ms).scale(begin: const Offset(0.8, 0.8)),
               const SizedBox(height: 24),
               Text(
-                'THE OFFLINE DREAMER',
-                style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: 2),
+                'ME++',
+                style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 3),
               ).animate().fadeIn(delay: 200.ms),
               const SizedBox(height: 8),
               Text(

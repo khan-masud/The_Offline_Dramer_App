@@ -6296,6 +6296,42 @@ class $DebtsTable extends Debts with TableInfo<$DebtsTable, Debt> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _linkedToWalletMeta = const VerificationMeta(
+    'linkedToWallet',
+  );
+  @override
+  late final GeneratedColumn<bool> linkedToWallet = GeneratedColumn<bool>(
+    'linked_to_wallet',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("linked_to_wallet" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _linkedTransactionIdMeta =
+      const VerificationMeta('linkedTransactionId');
+  @override
+  late final GeneratedColumn<int> linkedTransactionId = GeneratedColumn<int>(
+    'linked_transaction_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _settlementTransactionIdMeta =
+      const VerificationMeta('settlementTransactionId');
+  @override
+  late final GeneratedColumn<int> settlementTransactionId =
+      GeneratedColumn<int>(
+        'settlement_transaction_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -6329,6 +6365,9 @@ class $DebtsTable extends Debts with TableInfo<$DebtsTable, Debt> {
     phone,
     dueDate,
     isSettled,
+    linkedToWallet,
+    linkedTransactionId,
+    settlementTransactionId,
     createdAt,
     updatedAt,
   ];
@@ -6401,6 +6440,33 @@ class $DebtsTable extends Debts with TableInfo<$DebtsTable, Debt> {
         isSettled.isAcceptableOrUnknown(data['is_settled']!, _isSettledMeta),
       );
     }
+    if (data.containsKey('linked_to_wallet')) {
+      context.handle(
+        _linkedToWalletMeta,
+        linkedToWallet.isAcceptableOrUnknown(
+          data['linked_to_wallet']!,
+          _linkedToWalletMeta,
+        ),
+      );
+    }
+    if (data.containsKey('linked_transaction_id')) {
+      context.handle(
+        _linkedTransactionIdMeta,
+        linkedTransactionId.isAcceptableOrUnknown(
+          data['linked_transaction_id']!,
+          _linkedTransactionIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('settlement_transaction_id')) {
+      context.handle(
+        _settlementTransactionIdMeta,
+        settlementTransactionId.isAcceptableOrUnknown(
+          data['settlement_transaction_id']!,
+          _settlementTransactionIdMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -6468,6 +6534,19 @@ class $DebtsTable extends Debts with TableInfo<$DebtsTable, Debt> {
             DriftSqlType.bool,
             data['${effectivePrefix}is_settled'],
           )!,
+      linkedToWallet:
+          attachedDatabase.typeMapping.read(
+            DriftSqlType.bool,
+            data['${effectivePrefix}linked_to_wallet'],
+          )!,
+      linkedTransactionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}linked_transaction_id'],
+      ),
+      settlementTransactionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}settlement_transaction_id'],
+      ),
       createdAt:
           attachedDatabase.typeMapping.read(
             DriftSqlType.dateTime,
@@ -6497,6 +6576,9 @@ class Debt extends DataClass implements Insertable<Debt> {
   final String? phone;
   final DateTime? dueDate;
   final bool isSettled;
+  final bool linkedToWallet;
+  final int? linkedTransactionId;
+  final int? settlementTransactionId;
   final DateTime createdAt;
   final DateTime updatedAt;
   const Debt({
@@ -6509,6 +6591,9 @@ class Debt extends DataClass implements Insertable<Debt> {
     this.phone,
     this.dueDate,
     required this.isSettled,
+    required this.linkedToWallet,
+    this.linkedTransactionId,
+    this.settlementTransactionId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -6530,6 +6615,13 @@ class Debt extends DataClass implements Insertable<Debt> {
       map['due_date'] = Variable<DateTime>(dueDate);
     }
     map['is_settled'] = Variable<bool>(isSettled);
+    map['linked_to_wallet'] = Variable<bool>(linkedToWallet);
+    if (!nullToAbsent || linkedTransactionId != null) {
+      map['linked_transaction_id'] = Variable<int>(linkedTransactionId);
+    }
+    if (!nullToAbsent || settlementTransactionId != null) {
+      map['settlement_transaction_id'] = Variable<int>(settlementTransactionId);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -6550,6 +6642,15 @@ class Debt extends DataClass implements Insertable<Debt> {
               ? const Value.absent()
               : Value(dueDate),
       isSettled: Value(isSettled),
+      linkedToWallet: Value(linkedToWallet),
+      linkedTransactionId:
+          linkedTransactionId == null && nullToAbsent
+              ? const Value.absent()
+              : Value(linkedTransactionId),
+      settlementTransactionId:
+          settlementTransactionId == null && nullToAbsent
+              ? const Value.absent()
+              : Value(settlementTransactionId),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -6570,6 +6671,13 @@ class Debt extends DataClass implements Insertable<Debt> {
       phone: serializer.fromJson<String?>(json['phone']),
       dueDate: serializer.fromJson<DateTime?>(json['dueDate']),
       isSettled: serializer.fromJson<bool>(json['isSettled']),
+      linkedToWallet: serializer.fromJson<bool>(json['linkedToWallet']),
+      linkedTransactionId: serializer.fromJson<int?>(
+        json['linkedTransactionId'],
+      ),
+      settlementTransactionId: serializer.fromJson<int?>(
+        json['settlementTransactionId'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -6587,6 +6695,11 @@ class Debt extends DataClass implements Insertable<Debt> {
       'phone': serializer.toJson<String?>(phone),
       'dueDate': serializer.toJson<DateTime?>(dueDate),
       'isSettled': serializer.toJson<bool>(isSettled),
+      'linkedToWallet': serializer.toJson<bool>(linkedToWallet),
+      'linkedTransactionId': serializer.toJson<int?>(linkedTransactionId),
+      'settlementTransactionId': serializer.toJson<int?>(
+        settlementTransactionId,
+      ),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -6602,6 +6715,9 @@ class Debt extends DataClass implements Insertable<Debt> {
     Value<String?> phone = const Value.absent(),
     Value<DateTime?> dueDate = const Value.absent(),
     bool? isSettled,
+    bool? linkedToWallet,
+    Value<int?> linkedTransactionId = const Value.absent(),
+    Value<int?> settlementTransactionId = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => Debt(
@@ -6614,6 +6730,15 @@ class Debt extends DataClass implements Insertable<Debt> {
     phone: phone.present ? phone.value : this.phone,
     dueDate: dueDate.present ? dueDate.value : this.dueDate,
     isSettled: isSettled ?? this.isSettled,
+    linkedToWallet: linkedToWallet ?? this.linkedToWallet,
+    linkedTransactionId:
+        linkedTransactionId.present
+            ? linkedTransactionId.value
+            : this.linkedTransactionId,
+    settlementTransactionId:
+        settlementTransactionId.present
+            ? settlementTransactionId.value
+            : this.settlementTransactionId,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -6630,6 +6755,18 @@ class Debt extends DataClass implements Insertable<Debt> {
       phone: data.phone.present ? data.phone.value : this.phone,
       dueDate: data.dueDate.present ? data.dueDate.value : this.dueDate,
       isSettled: data.isSettled.present ? data.isSettled.value : this.isSettled,
+      linkedToWallet:
+          data.linkedToWallet.present
+              ? data.linkedToWallet.value
+              : this.linkedToWallet,
+      linkedTransactionId:
+          data.linkedTransactionId.present
+              ? data.linkedTransactionId.value
+              : this.linkedTransactionId,
+      settlementTransactionId:
+          data.settlementTransactionId.present
+              ? data.settlementTransactionId.value
+              : this.settlementTransactionId,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -6647,6 +6784,9 @@ class Debt extends DataClass implements Insertable<Debt> {
           ..write('phone: $phone, ')
           ..write('dueDate: $dueDate, ')
           ..write('isSettled: $isSettled, ')
+          ..write('linkedToWallet: $linkedToWallet, ')
+          ..write('linkedTransactionId: $linkedTransactionId, ')
+          ..write('settlementTransactionId: $settlementTransactionId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -6664,6 +6804,9 @@ class Debt extends DataClass implements Insertable<Debt> {
     phone,
     dueDate,
     isSettled,
+    linkedToWallet,
+    linkedTransactionId,
+    settlementTransactionId,
     createdAt,
     updatedAt,
   );
@@ -6680,6 +6823,9 @@ class Debt extends DataClass implements Insertable<Debt> {
           other.phone == this.phone &&
           other.dueDate == this.dueDate &&
           other.isSettled == this.isSettled &&
+          other.linkedToWallet == this.linkedToWallet &&
+          other.linkedTransactionId == this.linkedTransactionId &&
+          other.settlementTransactionId == this.settlementTransactionId &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -6694,6 +6840,9 @@ class DebtsCompanion extends UpdateCompanion<Debt> {
   final Value<String?> phone;
   final Value<DateTime?> dueDate;
   final Value<bool> isSettled;
+  final Value<bool> linkedToWallet;
+  final Value<int?> linkedTransactionId;
+  final Value<int?> settlementTransactionId;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   const DebtsCompanion({
@@ -6706,6 +6855,9 @@ class DebtsCompanion extends UpdateCompanion<Debt> {
     this.phone = const Value.absent(),
     this.dueDate = const Value.absent(),
     this.isSettled = const Value.absent(),
+    this.linkedToWallet = const Value.absent(),
+    this.linkedTransactionId = const Value.absent(),
+    this.settlementTransactionId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
   });
@@ -6719,6 +6871,9 @@ class DebtsCompanion extends UpdateCompanion<Debt> {
     this.phone = const Value.absent(),
     this.dueDate = const Value.absent(),
     this.isSettled = const Value.absent(),
+    this.linkedToWallet = const Value.absent(),
+    this.linkedTransactionId = const Value.absent(),
+    this.settlementTransactionId = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
   }) : personName = Value(personName),
@@ -6736,6 +6891,9 @@ class DebtsCompanion extends UpdateCompanion<Debt> {
     Expression<String>? phone,
     Expression<DateTime>? dueDate,
     Expression<bool>? isSettled,
+    Expression<bool>? linkedToWallet,
+    Expression<int>? linkedTransactionId,
+    Expression<int>? settlementTransactionId,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
   }) {
@@ -6749,6 +6907,11 @@ class DebtsCompanion extends UpdateCompanion<Debt> {
       if (phone != null) 'phone': phone,
       if (dueDate != null) 'due_date': dueDate,
       if (isSettled != null) 'is_settled': isSettled,
+      if (linkedToWallet != null) 'linked_to_wallet': linkedToWallet,
+      if (linkedTransactionId != null)
+        'linked_transaction_id': linkedTransactionId,
+      if (settlementTransactionId != null)
+        'settlement_transaction_id': settlementTransactionId,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
     });
@@ -6764,6 +6927,9 @@ class DebtsCompanion extends UpdateCompanion<Debt> {
     Value<String?>? phone,
     Value<DateTime?>? dueDate,
     Value<bool>? isSettled,
+    Value<bool>? linkedToWallet,
+    Value<int?>? linkedTransactionId,
+    Value<int?>? settlementTransactionId,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
   }) {
@@ -6777,6 +6943,10 @@ class DebtsCompanion extends UpdateCompanion<Debt> {
       phone: phone ?? this.phone,
       dueDate: dueDate ?? this.dueDate,
       isSettled: isSettled ?? this.isSettled,
+      linkedToWallet: linkedToWallet ?? this.linkedToWallet,
+      linkedTransactionId: linkedTransactionId ?? this.linkedTransactionId,
+      settlementTransactionId:
+          settlementTransactionId ?? this.settlementTransactionId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -6812,6 +6982,17 @@ class DebtsCompanion extends UpdateCompanion<Debt> {
     if (isSettled.present) {
       map['is_settled'] = Variable<bool>(isSettled.value);
     }
+    if (linkedToWallet.present) {
+      map['linked_to_wallet'] = Variable<bool>(linkedToWallet.value);
+    }
+    if (linkedTransactionId.present) {
+      map['linked_transaction_id'] = Variable<int>(linkedTransactionId.value);
+    }
+    if (settlementTransactionId.present) {
+      map['settlement_transaction_id'] = Variable<int>(
+        settlementTransactionId.value,
+      );
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -6833,6 +7014,9 @@ class DebtsCompanion extends UpdateCompanion<Debt> {
           ..write('phone: $phone, ')
           ..write('dueDate: $dueDate, ')
           ..write('isSettled: $isSettled, ')
+          ..write('linkedToWallet: $linkedToWallet, ')
+          ..write('linkedTransactionId: $linkedTransactionId, ')
+          ..write('settlementTransactionId: $settlementTransactionId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -6898,8 +7082,25 @@ class $DebtPaymentsTable extends DebtPayments
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _linkedTransactionIdMeta =
+      const VerificationMeta('linkedTransactionId');
   @override
-  List<GeneratedColumn> get $columns => [id, debtId, amount, note, paidAt];
+  late final GeneratedColumn<int> linkedTransactionId = GeneratedColumn<int>(
+    'linked_transaction_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    debtId,
+    amount,
+    note,
+    paidAt,
+    linkedTransactionId,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -6945,6 +7146,15 @@ class $DebtPaymentsTable extends DebtPayments
     } else if (isInserting) {
       context.missing(_paidAtMeta);
     }
+    if (data.containsKey('linked_transaction_id')) {
+      context.handle(
+        _linkedTransactionIdMeta,
+        linkedTransactionId.isAcceptableOrUnknown(
+          data['linked_transaction_id']!,
+          _linkedTransactionIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -6978,6 +7188,10 @@ class $DebtPaymentsTable extends DebtPayments
             DriftSqlType.dateTime,
             data['${effectivePrefix}paid_at'],
           )!,
+      linkedTransactionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}linked_transaction_id'],
+      ),
     );
   }
 
@@ -6993,12 +7207,14 @@ class DebtPayment extends DataClass implements Insertable<DebtPayment> {
   final double amount;
   final String? note;
   final DateTime paidAt;
+  final int? linkedTransactionId;
   const DebtPayment({
     required this.id,
     required this.debtId,
     required this.amount,
     this.note,
     required this.paidAt,
+    this.linkedTransactionId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -7010,6 +7226,9 @@ class DebtPayment extends DataClass implements Insertable<DebtPayment> {
       map['note'] = Variable<String>(note);
     }
     map['paid_at'] = Variable<DateTime>(paidAt);
+    if (!nullToAbsent || linkedTransactionId != null) {
+      map['linked_transaction_id'] = Variable<int>(linkedTransactionId);
+    }
     return map;
   }
 
@@ -7020,6 +7239,10 @@ class DebtPayment extends DataClass implements Insertable<DebtPayment> {
       amount: Value(amount),
       note: note == null && nullToAbsent ? const Value.absent() : Value(note),
       paidAt: Value(paidAt),
+      linkedTransactionId:
+          linkedTransactionId == null && nullToAbsent
+              ? const Value.absent()
+              : Value(linkedTransactionId),
     );
   }
 
@@ -7034,6 +7257,9 @@ class DebtPayment extends DataClass implements Insertable<DebtPayment> {
       amount: serializer.fromJson<double>(json['amount']),
       note: serializer.fromJson<String?>(json['note']),
       paidAt: serializer.fromJson<DateTime>(json['paidAt']),
+      linkedTransactionId: serializer.fromJson<int?>(
+        json['linkedTransactionId'],
+      ),
     );
   }
   @override
@@ -7045,6 +7271,7 @@ class DebtPayment extends DataClass implements Insertable<DebtPayment> {
       'amount': serializer.toJson<double>(amount),
       'note': serializer.toJson<String?>(note),
       'paidAt': serializer.toJson<DateTime>(paidAt),
+      'linkedTransactionId': serializer.toJson<int?>(linkedTransactionId),
     };
   }
 
@@ -7054,12 +7281,17 @@ class DebtPayment extends DataClass implements Insertable<DebtPayment> {
     double? amount,
     Value<String?> note = const Value.absent(),
     DateTime? paidAt,
+    Value<int?> linkedTransactionId = const Value.absent(),
   }) => DebtPayment(
     id: id ?? this.id,
     debtId: debtId ?? this.debtId,
     amount: amount ?? this.amount,
     note: note.present ? note.value : this.note,
     paidAt: paidAt ?? this.paidAt,
+    linkedTransactionId:
+        linkedTransactionId.present
+            ? linkedTransactionId.value
+            : this.linkedTransactionId,
   );
   DebtPayment copyWithCompanion(DebtPaymentsCompanion data) {
     return DebtPayment(
@@ -7068,6 +7300,10 @@ class DebtPayment extends DataClass implements Insertable<DebtPayment> {
       amount: data.amount.present ? data.amount.value : this.amount,
       note: data.note.present ? data.note.value : this.note,
       paidAt: data.paidAt.present ? data.paidAt.value : this.paidAt,
+      linkedTransactionId:
+          data.linkedTransactionId.present
+              ? data.linkedTransactionId.value
+              : this.linkedTransactionId,
     );
   }
 
@@ -7078,13 +7314,15 @@ class DebtPayment extends DataClass implements Insertable<DebtPayment> {
           ..write('debtId: $debtId, ')
           ..write('amount: $amount, ')
           ..write('note: $note, ')
-          ..write('paidAt: $paidAt')
+          ..write('paidAt: $paidAt, ')
+          ..write('linkedTransactionId: $linkedTransactionId')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, debtId, amount, note, paidAt);
+  int get hashCode =>
+      Object.hash(id, debtId, amount, note, paidAt, linkedTransactionId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -7093,7 +7331,8 @@ class DebtPayment extends DataClass implements Insertable<DebtPayment> {
           other.debtId == this.debtId &&
           other.amount == this.amount &&
           other.note == this.note &&
-          other.paidAt == this.paidAt);
+          other.paidAt == this.paidAt &&
+          other.linkedTransactionId == this.linkedTransactionId);
 }
 
 class DebtPaymentsCompanion extends UpdateCompanion<DebtPayment> {
@@ -7102,12 +7341,14 @@ class DebtPaymentsCompanion extends UpdateCompanion<DebtPayment> {
   final Value<double> amount;
   final Value<String?> note;
   final Value<DateTime> paidAt;
+  final Value<int?> linkedTransactionId;
   const DebtPaymentsCompanion({
     this.id = const Value.absent(),
     this.debtId = const Value.absent(),
     this.amount = const Value.absent(),
     this.note = const Value.absent(),
     this.paidAt = const Value.absent(),
+    this.linkedTransactionId = const Value.absent(),
   });
   DebtPaymentsCompanion.insert({
     this.id = const Value.absent(),
@@ -7115,6 +7356,7 @@ class DebtPaymentsCompanion extends UpdateCompanion<DebtPayment> {
     required double amount,
     this.note = const Value.absent(),
     required DateTime paidAt,
+    this.linkedTransactionId = const Value.absent(),
   }) : debtId = Value(debtId),
        amount = Value(amount),
        paidAt = Value(paidAt);
@@ -7124,6 +7366,7 @@ class DebtPaymentsCompanion extends UpdateCompanion<DebtPayment> {
     Expression<double>? amount,
     Expression<String>? note,
     Expression<DateTime>? paidAt,
+    Expression<int>? linkedTransactionId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -7131,6 +7374,8 @@ class DebtPaymentsCompanion extends UpdateCompanion<DebtPayment> {
       if (amount != null) 'amount': amount,
       if (note != null) 'note': note,
       if (paidAt != null) 'paid_at': paidAt,
+      if (linkedTransactionId != null)
+        'linked_transaction_id': linkedTransactionId,
     });
   }
 
@@ -7140,6 +7385,7 @@ class DebtPaymentsCompanion extends UpdateCompanion<DebtPayment> {
     Value<double>? amount,
     Value<String?>? note,
     Value<DateTime>? paidAt,
+    Value<int?>? linkedTransactionId,
   }) {
     return DebtPaymentsCompanion(
       id: id ?? this.id,
@@ -7147,6 +7393,7 @@ class DebtPaymentsCompanion extends UpdateCompanion<DebtPayment> {
       amount: amount ?? this.amount,
       note: note ?? this.note,
       paidAt: paidAt ?? this.paidAt,
+      linkedTransactionId: linkedTransactionId ?? this.linkedTransactionId,
     );
   }
 
@@ -7168,6 +7415,9 @@ class DebtPaymentsCompanion extends UpdateCompanion<DebtPayment> {
     if (paidAt.present) {
       map['paid_at'] = Variable<DateTime>(paidAt.value);
     }
+    if (linkedTransactionId.present) {
+      map['linked_transaction_id'] = Variable<int>(linkedTransactionId.value);
+    }
     return map;
   }
 
@@ -7178,7 +7428,8 @@ class DebtPaymentsCompanion extends UpdateCompanion<DebtPayment> {
           ..write('debtId: $debtId, ')
           ..write('amount: $amount, ')
           ..write('note: $note, ')
-          ..write('paidAt: $paidAt')
+          ..write('paidAt: $paidAt, ')
+          ..write('linkedTransactionId: $linkedTransactionId')
           ..write(')'))
         .toString();
   }
@@ -13121,6 +13372,9 @@ typedef $$DebtsTableCreateCompanionBuilder =
       Value<String?> phone,
       Value<DateTime?> dueDate,
       Value<bool> isSettled,
+      Value<bool> linkedToWallet,
+      Value<int?> linkedTransactionId,
+      Value<int?> settlementTransactionId,
       required DateTime createdAt,
       required DateTime updatedAt,
     });
@@ -13135,6 +13389,9 @@ typedef $$DebtsTableUpdateCompanionBuilder =
       Value<String?> phone,
       Value<DateTime?> dueDate,
       Value<bool> isSettled,
+      Value<bool> linkedToWallet,
+      Value<int?> linkedTransactionId,
+      Value<int?> settlementTransactionId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
     });
@@ -13212,6 +13469,21 @@ class $$DebtsTableFilterComposer extends Composer<_$AppDatabase, $DebtsTable> {
 
   ColumnFilters<bool> get isSettled => $composableBuilder(
     column: $table.isSettled,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get linkedToWallet => $composableBuilder(
+    column: $table.linkedToWallet,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get linkedTransactionId => $composableBuilder(
+    column: $table.linkedTransactionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get settlementTransactionId => $composableBuilder(
+    column: $table.settlementTransactionId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -13305,6 +13577,21 @@ class $$DebtsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get linkedToWallet => $composableBuilder(
+    column: $table.linkedToWallet,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get linkedTransactionId => $composableBuilder(
+    column: $table.linkedTransactionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get settlementTransactionId => $composableBuilder(
+    column: $table.settlementTransactionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -13355,6 +13642,21 @@ class $$DebtsTableAnnotationComposer
 
   GeneratedColumn<bool> get isSettled =>
       $composableBuilder(column: $table.isSettled, builder: (column) => column);
+
+  GeneratedColumn<bool> get linkedToWallet => $composableBuilder(
+    column: $table.linkedToWallet,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get linkedTransactionId => $composableBuilder(
+    column: $table.linkedTransactionId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get settlementTransactionId => $composableBuilder(
+    column: $table.settlementTransactionId,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -13425,6 +13727,9 @@ class $$DebtsTableTableManager
                 Value<String?> phone = const Value.absent(),
                 Value<DateTime?> dueDate = const Value.absent(),
                 Value<bool> isSettled = const Value.absent(),
+                Value<bool> linkedToWallet = const Value.absent(),
+                Value<int?> linkedTransactionId = const Value.absent(),
+                Value<int?> settlementTransactionId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
               }) => DebtsCompanion(
@@ -13437,6 +13742,9 @@ class $$DebtsTableTableManager
                 phone: phone,
                 dueDate: dueDate,
                 isSettled: isSettled,
+                linkedToWallet: linkedToWallet,
+                linkedTransactionId: linkedTransactionId,
+                settlementTransactionId: settlementTransactionId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -13451,6 +13759,9 @@ class $$DebtsTableTableManager
                 Value<String?> phone = const Value.absent(),
                 Value<DateTime?> dueDate = const Value.absent(),
                 Value<bool> isSettled = const Value.absent(),
+                Value<bool> linkedToWallet = const Value.absent(),
+                Value<int?> linkedTransactionId = const Value.absent(),
+                Value<int?> settlementTransactionId = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
               }) => DebtsCompanion.insert(
@@ -13463,6 +13774,9 @@ class $$DebtsTableTableManager
                 phone: phone,
                 dueDate: dueDate,
                 isSettled: isSettled,
+                linkedToWallet: linkedToWallet,
+                linkedTransactionId: linkedTransactionId,
+                settlementTransactionId: settlementTransactionId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
               ),
@@ -13529,6 +13843,7 @@ typedef $$DebtPaymentsTableCreateCompanionBuilder =
       required double amount,
       Value<String?> note,
       required DateTime paidAt,
+      Value<int?> linkedTransactionId,
     });
 typedef $$DebtPaymentsTableUpdateCompanionBuilder =
     DebtPaymentsCompanion Function({
@@ -13537,6 +13852,7 @@ typedef $$DebtPaymentsTableUpdateCompanionBuilder =
       Value<double> amount,
       Value<String?> note,
       Value<DateTime> paidAt,
+      Value<int?> linkedTransactionId,
     });
 
 final class $$DebtPaymentsTableReferences
@@ -13587,6 +13903,11 @@ class $$DebtPaymentsTableFilterComposer
 
   ColumnFilters<DateTime> get paidAt => $composableBuilder(
     column: $table.paidAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get linkedTransactionId => $composableBuilder(
+    column: $table.linkedTransactionId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -13643,6 +13964,11 @@ class $$DebtPaymentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get linkedTransactionId => $composableBuilder(
+    column: $table.linkedTransactionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$DebtsTableOrderingComposer get debtId {
     final $$DebtsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -13687,6 +14013,11 @@ class $$DebtPaymentsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get paidAt =>
       $composableBuilder(column: $table.paidAt, builder: (column) => column);
+
+  GeneratedColumn<int> get linkedTransactionId => $composableBuilder(
+    column: $table.linkedTransactionId,
+    builder: (column) => column,
+  );
 
   $$DebtsTableAnnotationComposer get debtId {
     final $$DebtsTableAnnotationComposer composer = $composerBuilder(
@@ -13746,12 +14077,14 @@ class $$DebtPaymentsTableTableManager
                 Value<double> amount = const Value.absent(),
                 Value<String?> note = const Value.absent(),
                 Value<DateTime> paidAt = const Value.absent(),
+                Value<int?> linkedTransactionId = const Value.absent(),
               }) => DebtPaymentsCompanion(
                 id: id,
                 debtId: debtId,
                 amount: amount,
                 note: note,
                 paidAt: paidAt,
+                linkedTransactionId: linkedTransactionId,
               ),
           createCompanionCallback:
               ({
@@ -13760,12 +14093,14 @@ class $$DebtPaymentsTableTableManager
                 required double amount,
                 Value<String?> note = const Value.absent(),
                 required DateTime paidAt,
+                Value<int?> linkedTransactionId = const Value.absent(),
               }) => DebtPaymentsCompanion.insert(
                 id: id,
                 debtId: debtId,
                 amount: amount,
                 note: note,
                 paidAt: paidAt,
+                linkedTransactionId: linkedTransactionId,
               ),
           withReferenceMapper:
               (p0) =>

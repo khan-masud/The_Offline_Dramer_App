@@ -51,7 +51,7 @@ class BirthdayCalendarScreen extends ConsumerWidget {
           }
 
           final sorted = [...birthdays]
-            ..sort((a, b) => _nextBirthday(a.dateOfBirth).compareTo(_nextBirthday(b.dateOfBirth)));
+            ..sort((a, b) => _nextBirthday(a.dateOfBirth.toLocal()).compareTo(_nextBirthday(b.dateOfBirth.toLocal())));
 
           return ListView.builder(
             padding: const EdgeInsets.all(16),
@@ -59,7 +59,8 @@ class BirthdayCalendarScreen extends ConsumerWidget {
             itemCount: sorted.length,
             itemBuilder: (context, index) {
               final b = sorted[index];
-              final nextDate = _nextBirthday(b.dateOfBirth);
+              final localDob = b.dateOfBirth.toLocal();
+              final nextDate = _nextBirthday(localDob);
               final left = nextDate.difference(_today()).inDays;
               final subtitle = left == 0
                   ? 'Today'
@@ -72,7 +73,7 @@ class BirthdayCalendarScreen extends ConsumerWidget {
                 child: AppCard(
                   padding: const EdgeInsets.all(12),
                   child: Row(
-                    children: [
+                     children: [
                       Container(
                         padding: const EdgeInsets.all(9),
                         decoration: BoxDecoration(
@@ -88,7 +89,7 @@ class BirthdayCalendarScreen extends ConsumerWidget {
                           children: [
                             Text(b.personName, style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
                             Text(
-                              '${DateFormat('dd MMM').format(b.dateOfBirth)} • $subtitle',
+                              '${DateFormat('dd MMM').format(localDob)} • $subtitle',
                               style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
                             ),
                             if (b.phone != null && b.phone!.trim().isNotEmpty)
@@ -160,6 +161,12 @@ class BirthdayCalendarScreen extends ConsumerWidget {
     DateTime selectedDate = existing?.dateOfBirth ?? DateTime(DateTime.now().year - 20, 1, 1);
     bool remindDayBefore = existing?.remindDayBefore ?? true;
     bool remindOnDay = existing?.remindOnDay ?? true;
+
+    final notifPrefs = ref.read(notificationPreferencesProvider);
+    final birthdayTimeText = MaterialLocalizations.of(context).formatTimeOfDay(
+      notifPrefs.birthdayReminderTime,
+      alwaysUse24HourFormat: MediaQuery.of(context).alwaysUse24HourFormat,
+    );
 
     await showModalBottomSheet(
       context: context,
@@ -233,18 +240,23 @@ class BirthdayCalendarScreen extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        value: remindDayBefore,
-                        title: const Text('Notify 1 day before'),
-                        onChanged: (v) => setSheetState(() => remindDayBefore = v),
+                      Material(
+                        color: Colors.transparent,
+                        child: SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: remindDayBefore,
+                          title: const Text('Notify 1 day before'),
+                          onChanged: (v) => setSheetState(() => remindDayBefore = v),
+                        ),
                       ),
-                      SwitchListTile.adaptive(
-                        contentPadding: EdgeInsets.zero,
-                        value: remindOnDay,
-                        title: const Text('Notify on birthday at 12:00 AM'),
-                        onChanged: (v) => setSheetState(() => remindOnDay = v),
+                      Material(
+                        color: Colors.transparent,
+                        child: SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: remindOnDay,
+                          title: Text('Notify on birthday at $birthdayTimeText'),
+                          onChanged: (v) => setSheetState(() => remindOnDay = v),
+                        ),
                       ),
                       const SizedBox(height: 8),
                       SizedBox(
@@ -302,6 +314,8 @@ class BirthdayCalendarScreen extends ConsumerWidget {
                               remindDayBefore: remindDayBefore,
                               remindOnDay: remindOnDay,
                               alertMode: prefs.alertMode,
+                              hour: prefs.birthdayReminderTime.hour,
+                              minute: prefs.birthdayReminderTime.minute,
                             );
 
                             if (!ctx.mounted) return;

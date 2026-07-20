@@ -179,10 +179,24 @@ class TodoScreen extends ConsumerWidget {
                     physics: const BouncingScrollPhysics(),
                     itemCount: todos.length,
                     buildDefaultDragHandles: false,
-                    onReorder: (oldIndex, newIndex) {
+                    onReorderItem: (oldIndex, newIndex) {
+                      // onReorderItem does NOT need the newIndex-1 adjustment
+                      final item = todos[oldIndex];
+                      final priority = item.priority;
+
+                      // Find valid index range for this priority group in the current list
+                      final firstIndex = todos.indexWhere((t) => t.priority == priority);
+                      final lastIndex = todos.lastIndexWhere((t) => t.priority == priority);
+
+                      if (newIndex < firstIndex || newIndex > lastIndex) {
+                        // Revert: moved outside priority level range
+                        return;
+                      }
+
                       final updated = List<Todo>.from(todos);
-                      final item = updated.removeAt(oldIndex);
-                      updated.insert(newIndex, item);
+                      final removed = updated.removeAt(oldIndex);
+                      updated.insert(newIndex, removed);
+
                       final db = ref.read(databaseProvider);
                       db.updateTodoSortOrders(
                         updated.asMap().entries.map((e) => (
@@ -193,10 +207,8 @@ class TodoScreen extends ConsumerWidget {
                     },
                     itemBuilder: (context, i) {
                       final todo = todos[i];
-                      return ReorderableDragStartListener(
+                      return _TodoCard(
                         key: ValueKey('todo_${todo.id}'),
-                        index: i,
-                        child: _TodoCard(
                           todo: todo,
                           onToggle: () {
                             HapticFeedback.lightImpact();
@@ -270,8 +282,8 @@ class TodoScreen extends ConsumerWidget {
                             );
                           },
                           onEdit: () => _showAddEditSheet(context, ref, todo: todo),
-                        ).animate().fadeIn(delay: (50 * i).ms, duration: 300.ms),
-                      );
+                          reorderIndex: i,
+                        );
                     },
                   );
                 },
@@ -308,7 +320,7 @@ class TodoScreen extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _AddEditTodoSheet(todo: todo),
+      builder: (_) => AddEditTodoSheet(todo: todo),
     );
   }
 }
@@ -319,12 +331,15 @@ class _TodoCard extends ConsumerWidget {
   final VoidCallback onToggle;
   final VoidCallback onDelete;
   final VoidCallback onEdit;
+  final int reorderIndex;
 
   const _TodoCard({
+    super.key,
     required this.todo,
     required this.onToggle,
     required this.onDelete,
     required this.onEdit,
+    required this.reorderIndex,
   });
 
   Color _priorityColor() {
@@ -662,14 +677,17 @@ class _TodoCard extends ConsumerWidget {
                                     Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        IconButton(
-                                          icon: const Icon(Icons.drag_indicator_rounded),
-                                          color: theme.colorScheme.onSurfaceVariant,
-                                          onPressed: () {},
-                                          padding: const EdgeInsets.all(4),
-                                          constraints: const BoxConstraints(),
-                                          iconSize: 20,
-                                          tooltip: 'Drag to reorder',
+                                        ReorderableDragStartListener(
+                                          index: reorderIndex,
+                                          child: IconButton(
+                                            icon: const Icon(Icons.drag_indicator_rounded),
+                                            color: theme.colorScheme.onSurfaceVariant,
+                                            onPressed: () {},
+                                            padding: const EdgeInsets.all(4),
+                                            constraints: const BoxConstraints(),
+                                            iconSize: 20,
+                                            tooltip: 'Drag to reorder',
+                                          ),
                                         ),
                                         const SizedBox(width: 4),
                                         IconButton(
@@ -852,7 +870,7 @@ class _TodoCard extends ConsumerWidget {
           ),
         ),
       ),
-    );
+    ).animate().fadeIn(delay: (50 * reorderIndex).ms, duration: 300.ms);
   }
 }
 
@@ -899,16 +917,17 @@ class _ModernChip extends StatelessWidget {
   }
 }
 
-class _AddEditTodoSheet extends ConsumerStatefulWidget {
+class AddEditTodoSheet extends ConsumerStatefulWidget {
   final Todo? todo;
+  final DateTime? initialDueDate;
 
-  const _AddEditTodoSheet({this.todo});
+  const AddEditTodoSheet({super.key, this.todo, this.initialDueDate});
 
   @override
-  ConsumerState<_AddEditTodoSheet> createState() => _AddEditTodoSheetState();
+  ConsumerState<AddEditTodoSheet> createState() => _AddEditTodoSheetState();
 }
 
-class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
+class _AddEditTodoSheetState extends ConsumerState<AddEditTodoSheet> {
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
   final _tagController = TextEditingController();
@@ -933,6 +952,8 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
       _tags = _parseTagsFromJson(widget.todo!.tags);
 
       _loadSubTasks();
+    } else if (widget.initialDueDate != null) {
+      _dueDate = widget.initialDueDate;
     }
   }
 
@@ -1423,6 +1444,59 @@ class _AddEditTodoSheetState extends ConsumerState<_AddEditTodoSheet> {
                 ),
               ],
             ),
+
+            // Tag suggestions
+            if (_tags.length < 5) ...[  // Don't show if all 5 slots used
+              const SizedBox(height: 12),
+              Consumer(
+                builder: (context, ref, _) {
+                  final usedTagsAsync = ref.watch(usedTagsProvider);
+                  return usedTagsAsync.when(
+                    data: (usedTags) {
+                      // Filter out already-added tags
+                      final suggestions = usedTags
+                          .where((t) => !_tags.contains(t))
+                          .take(5 - _tags.length)
+                          .toList();
+                      if (suggestions.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Suggested',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: suggestions.map((tag) => ActionChip(
+                              label: Text(
+                                tag,
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: AppColors.info,
+                                ),
+                              ),
+                              avatar: Icon(Icons.add_rounded, size: 14, color: AppColors.info),
+                              onPressed: () => _addTag(tag),
+                              visualDensity: VisualDensity.compact,
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              backgroundColor: AppColors.info.withValues(alpha: 0.08),
+                              side: BorderSide(color: AppColors.info.withValues(alpha: 0.2)),
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                            )).toList(),
+                          ),
+                        ],
+                      );
+                    },
+                    loading: () => const SizedBox.shrink(),
+                    error: (_, __) => const SizedBox.shrink(),
+                  );
+                },
+              ),
+            ],
 
             const SizedBox(height: 20),
             Text(

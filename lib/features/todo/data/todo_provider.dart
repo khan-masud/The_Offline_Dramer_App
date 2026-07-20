@@ -3,6 +3,33 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/database/app_database.dart';
 import '../../../core/database/database_provider.dart';
 
+// Last 5 used tag suggestions (sorted by updatedAt descending)
+final usedTagsProvider = StreamProvider<List<String>>((ref) {
+  final db = ref.watch(databaseProvider);
+  return db.watchAllTodos().map((allTodos) {
+    final sorted = List<Todo>.from(allTodos)
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    final Set<String> recentTags = {};
+    for (final todo in sorted) {
+      try {
+        final decoded = jsonDecode(todo.tags);
+        if (decoded is List) {
+          for (final tag in decoded) {
+            final s = tag.toString().trim();
+            if (s.isNotEmpty) {
+              recentTags.add(s);
+              if (recentTags.length >= 5) {
+                return recentTags.toList();
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return recentTags.toList();
+  });
+});
+
 // Filter state
 enum TodoFilter { all, pending, completed }
 

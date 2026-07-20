@@ -7,14 +7,29 @@ import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/database/database_provider.dart';
+import '../../../todo/presentation/screens/todo_screen.dart' show AddEditTodoSheet;
 
-// Provider for calendar month events
+// ────────────────── PROVIDERS ──────────────────
+
 final calendarMonthProvider = FutureProvider.family<Map<DateTime, List<Map<String, dynamic>>>, DateTime>(
   (ref, month) {
     final db = ref.watch(databaseProvider);
     return db.getMonthEvents(month.year, month.month);
   },
 );
+
+final calendarDayEventsProvider = FutureProvider.family<List<Map<String, dynamic>>, DateTime>(
+  (ref, day) {
+    final db = ref.watch(databaseProvider);
+    return db.getDayEvents(day);
+  },
+);
+
+enum EventFilter { all, todo, transaction, habit, routine, focus, debt, birthday }
+
+final calendarFilterProvider = StateProvider<EventFilter>((ref) => EventFilter.all);
+
+// ────────────────── SCREEN ──────────────────
 
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
@@ -35,161 +50,410 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     _selectedDay = DateTime(now.year, now.month, now.day);
   }
 
+  void _goToToday() {
+    final now = DateTime.now();
+    setState(() {
+      _selectedMonth = DateTime(now.year, now.month);
+      _selectedDay = DateTime(now.year, now.month, now.day);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final eventsAsync = ref.watch(calendarMonthProvider(_selectedMonth));
+    final filter = ref.watch(calendarFilterProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Calendar'),
         centerTitle: false,
+        actions: [
+          TextButton.icon(
+            onPressed: _goToToday,
+            icon: const Icon(Icons.today_rounded, size: 18),
+            label: const Text('Today'),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              foregroundColor: AppColors.primary,
+            ),
+          ),
+        ],
       ),
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
+          // ── Month selector ──
           SliverToBoxAdapter(
-            child: Column(
-              children: [
-                // Month selector
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.chevron_left_rounded),
-                        onPressed: () => setState(() {
-                          _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
-                          _selectedDay = null;
-                        }),
-                        visualDensity: VisualDensity.compact,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left_rounded),
+                    onPressed: () => setState(() {
+                      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
+                    }),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  GestureDetector(
+                    onTap: _goToToday,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface,
+                        borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+                        border: Border.all(color: theme.colorScheme.outline),
                       ),
-                      GestureDetector(
-                        onTap: () {
-                          final now = DateTime.now();
-                          setState(() {
-                            _selectedMonth = DateTime(now.year, now.month);
-                            _selectedDay = DateTime(now.year, now.month, now.day);
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.surface,
-                            borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-                            border: Border.all(color: theme.colorScheme.outline),
-                          ),
-                          child: Text(
-                            DateFormat('MMMM yyyy').format(_selectedMonth),
-                            style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface),
-                          ),
+                      child: Text(
+                        DateFormat('MMMM yyyy').format(_selectedMonth),
+                        style: AppTypography.labelLarge.copyWith(
+                          color: theme.colorScheme.onSurface,
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.chevron_right_rounded),
-                        onPressed: () => setState(() {
-                          _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1);
-                          _selectedDay = null;
-                        }),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-
-                // Calendar grid
-                eventsAsync.when(
-                  data: (events) => _CalendarGrid(
-                    month: _selectedMonth,
-                    events: events,
-                    selectedDay: _selectedDay,
-                    onDayTap: (day) => setState(() => _selectedDay = day),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right_rounded),
+                    onPressed: () => setState(() {
+                      _selectedMonth = DateTime(_selectedMonth.year, _selectedMonth.month + 1);
+                    }),
+                    visualDensity: VisualDensity.compact,
                   ),
-                  loading: () => _CalendarGrid(
-                    month: _selectedMonth,
-                    events: const {},
-                    selectedDay: _selectedDay,
-                    onDayTap: (day) => setState(() => _selectedDay = day),
-                  ),
-                  error: (_, __) => _CalendarGrid(
-                    month: _selectedMonth,
-                    events: const {},
-                    selectedDay: _selectedDay,
-                    onDayTap: (day) => setState(() => _selectedDay = day),
-                  ),
-                ),
-
-                const SizedBox(height: 8),
-                Divider(height: 1, color: theme.colorScheme.outline),
-              ],
+                ],
+              ),
             ),
           ),
 
-          // Day events
-          eventsAsync.when(
-            data: (events) {
-              if (_selectedDay == null) {
-                return SliverFillRemaining(hasScrollBody: false, child: _noSelection(theme));
-              }
-              final dayEvents = events[_selectedDay] ?? [];
-              if (dayEvents.isEmpty) {
-                return SliverFillRemaining(hasScrollBody: false, child: _noDayEvents(theme));
-              }
-              return SliverPadding(
-                padding: const EdgeInsets.all(16),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) {
-                      final event = dayEvents[i];
-                      return _EventTile(event: event)
-                          .animate().fadeIn(delay: (50 * i).ms, duration: 300.ms);
-                    },
-                    childCount: dayEvents.length,
+          // ── Calendar grid ──
+          SliverToBoxAdapter(
+            child: eventsAsync.when(
+              data: (events) => _CalendarGrid(
+                month: _selectedMonth,
+                events: events,
+                selectedDay: _selectedDay,
+                onDayTap: (day) => setState(() => _selectedDay = day),
+                onDayLongPress: (day) => _addTodoForDate(day),
+              ),
+              loading: () => _CalendarGrid(
+                month: _selectedMonth,
+                events: const {},
+                selectedDay: _selectedDay,
+                onDayTap: (day) => setState(() => _selectedDay = day),
+                onDayLongPress: (day) => _addTodoForDate(day),
+              ),
+              error: (_, __) => _CalendarGrid(
+                month: _selectedMonth,
+                events: const {},
+                selectedDay: _selectedDay,
+                onDayTap: (day) => setState(() => _selectedDay = day),
+                onDayLongPress: (day) => _addTodoForDate(day),
+              ),
+            ),
+          ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 8)),
+
+          // ── Filter chips ──
+          if (_selectedDay != null)
+            SliverToBoxAdapter(
+              child: _FilterChips(selected: filter),
+            ),
+
+          // ── Selected day header + Add Todo button ──
+          if (_selectedDay != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        DateFormat('EEEE, MMM d').format(_selectedDay!),
+                        style: AppTypography.labelLarge.copyWith(
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                    ),
+                    _AddTodoButton(
+                      selectedDay: _selectedDay!,
+                      onAdded: () {
+                        ref.invalidate(calendarMonthProvider(_selectedMonth));
+                        ref.invalidate(calendarDayEventsProvider(_selectedDay!));
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // ── Day events ──
+          if (_selectedDay != null)
+            _DayEventsList(
+              selectedDay: _selectedDay!,
+              filter: filter,
+            )
+          else
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Center(
+                child: Text(
+                  'Tap a day to see events',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-              );
-            },
-            loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator())),
-            error: (_, __) => SliverFillRemaining(hasScrollBody: false, child: _noSelection(theme)),
-          ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _noSelection(ThemeData theme) {
-    return Center(
-      child: Text('Tap a day to see events', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-    );
+  void _addTodoForDate(DateTime date) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => AddEditTodoSheet(initialDueDate: date),
+    ).then((_) {
+      ref.invalidate(calendarMonthProvider(_selectedMonth));
+      if (_selectedDay != null) {
+        ref.invalidate(calendarDayEventsProvider(_selectedDay!));
+      }
+    });
   }
+}
 
-  Widget _noDayEvents(ThemeData theme) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.event_available_rounded, size: 40, color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
-          const SizedBox(height: 8),
-          Text('No events on this day', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-        ],
+// ────────────────── FILTER CHIPS ──────────────────
+
+class _FilterChips extends ConsumerWidget {
+  final EventFilter selected;
+  const _FilterChips({required this.selected});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items = [
+      (EventFilter.all, 'All', Icons.select_all_rounded, AppColors.primary),
+      (EventFilter.todo, 'Tasks', Icons.check_circle_outline, AppColors.primary),
+      (EventFilter.transaction, 'Money', Icons.account_balance_wallet_outlined, AppColors.success),
+      (EventFilter.habit, 'Habits', Icons.trending_up_rounded, AppColors.purple),
+      (EventFilter.routine, 'Routines', Icons.repeat_rounded, AppColors.warning),
+      (EventFilter.focus, 'Timer', Icons.timer_outlined, Colors.teal),
+      (EventFilter.debt, 'Debts', Icons.money_rounded, AppColors.error),
+      (EventFilter.birthday, 'Birthdays', Icons.cake_rounded, Colors.pink),
+    ];
+
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        scrollDirection: Axis.horizontal,
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemBuilder: (_, i) {
+          final (filter, label, icon, color) = items[i];
+          final isActive = selected == filter;
+          return FilterChip(
+            label: Text(label, style: AppTypography.labelSmall.copyWith(
+              color: isActive ? Colors.white : color,
+              fontWeight: FontWeight.w600,
+            )),
+            avatar: Icon(icon, size: 14, color: isActive ? Colors.white : color),
+            selected: isActive,
+            onSelected: (_) => ref.read(calendarFilterProvider.notifier).state = filter,
+            selectedColor: color,
+            backgroundColor: color.withValues(alpha: 0.08),
+            side: BorderSide(color: isActive ? color : color.withValues(alpha: 0.2)),
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            showCheckmark: false,
+          );
+        },
       ),
     );
   }
 }
 
-// ==================== CALENDAR GRID ====================
+// ────────────────── ADD TODO BUTTON ──────────────────
+
+class _AddTodoButton extends StatelessWidget {
+  final DateTime selectedDay;
+  final VoidCallback onAdded;
+  const _AddTodoButton({required this.selectedDay, required this.onAdded});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: () {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => AddEditTodoSheet(initialDueDate: selectedDay),
+        ).then((_) => onAdded());
+      },
+      icon: const Icon(Icons.add_rounded, size: 18),
+      label: const Text('Add Task'),
+      style: TextButton.styleFrom(
+        visualDensity: VisualDensity.compact,
+        foregroundColor: AppColors.primary,
+      ),
+    );
+  }
+}
+
+// ────────────────── DAY EVENTS LIST ──────────────────
+
+class _DayEventsList extends ConsumerWidget {
+  final DateTime selectedDay;
+  final EventFilter filter;
+  const _DayEventsList({required this.selectedDay, required this.filter});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final eventsAsync = ref.watch(calendarDayEventsProvider(selectedDay));
+
+    return eventsAsync.when(
+      data: (allEvents) {
+        final events = filter == EventFilter.all
+            ? allEvents
+            : allEvents.where((e) => e['type'] == filter.name).toList();
+
+        if (events.isEmpty) {
+          return SliverFillRemaining(
+            hasScrollBody: false,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(height: 40),
+                Icon(
+                  Icons.event_available_rounded,
+                  size: 40,
+                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  filter == EventFilter.all
+                      ? 'No events on this day'
+                      : 'No ${filter.name} events',
+                  style: AppTypography.bodyMedium.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Long-press a day to add a task',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Group events by type
+        final grouped = <String, List<Map<String, dynamic>>>{};
+        for (final e in events) {
+          final type = e['type'] as String;
+          grouped.putIfAbsent(type, () => []).add(e);
+        }
+
+        final sectionOrder = ['todo', 'birthday', 'transaction', 'debt', 'habit', 'routine', 'focus'];
+
+        return SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, i) {
+                int runningIndex = 0;
+                String? currentType;
+                int itemsBeforeCurrentSection = 0;
+
+                for (final type in sectionOrder) {
+                  if (!grouped.containsKey(type)) continue;
+                  if (runningIndex + grouped[type]!.length > i) {
+                    currentType = type;
+                    itemsBeforeCurrentSection = runningIndex;
+                    break;
+                  }
+                  runningIndex += grouped[type]!.length;
+                }
+
+                if (currentType == null) return null;
+                final localIndex = i - itemsBeforeCurrentSection;
+                final event = grouped[currentType]![localIndex];
+                final isFirstInSection = localIndex == 0;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (isFirstInSection) ...[
+                      const SizedBox(height: 8),
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          _sectionTitle(currentType),
+                          style: AppTypography.labelSmall.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                    _EventTile(event: event)
+                        .animate()
+                        .fadeIn(delay: (30 * i).ms, duration: 250.ms),
+                  ],
+                );
+              },
+              childCount: events.length,
+            ),
+          ),
+        );
+      },
+      loading: () => const SliverFillRemaining(
+        child: Center(child: CircularProgressIndicator()),
+      ),
+      error: (_, __) => const SliverFillRemaining(
+        child: Center(child: Text('Could not load events')),
+      ),
+    );
+  }
+
+  String _sectionTitle(String type) {
+    switch (type) {
+      case 'todo': return '📋 Tasks';
+      case 'transaction': return '💰 Transactions';
+      case 'habit': return '✅ Habits';
+      case 'routine': return '🔄 Routines';
+      case 'focus': return '⏱ Timer';
+      case 'debt': return '💳 Debts';
+      case 'birthday': return '🎂 Birthdays';
+      default: return type.toUpperCase();
+    }
+  }
+}
+
+// ────────────────── CALENDAR GRID ──────────────────
+
 class _CalendarGrid extends StatelessWidget {
   final DateTime month;
   final Map<DateTime, List<Map<String, dynamic>>> events;
   final DateTime? selectedDay;
   final ValueChanged<DateTime> onDayTap;
+  final ValueChanged<DateTime> onDayLongPress;
 
   const _CalendarGrid({
     required this.month,
     required this.events,
     required this.selectedDay,
     required this.onDayTap,
+    required this.onDayLongPress,
   });
 
   @override
@@ -197,28 +461,27 @@ class _CalendarGrid extends StatelessWidget {
     final theme = Theme.of(context);
     final firstDay = DateTime(month.year, month.month, 1);
     final lastDay = DateTime(month.year, month.month + 1, 0);
-    final startWeekday = firstDay.weekday; // 1=Mon
+    final startWeekday = firstDay.weekday;
     final daysInMonth = lastDay.day;
     final today = DateTime.now();
     final todayDate = DateTime(today.year, today.month, today.day);
 
-    // Build grid cells
     final cells = <Widget>[];
 
-    // Day headers
     const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     for (final label in dayLabels) {
       cells.add(Center(
-        child: Text(label, style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        child: Text(label, style: AppTypography.labelSmall.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w500,
+        )),
       ));
     }
 
-    // Empty cells before first day
     for (int i = 1; i < startWeekday; i++) {
       cells.add(const SizedBox.shrink());
     }
 
-    // Day cells
     for (int day = 1; day <= daysInMonth; day++) {
       final date = DateTime(month.year, month.month, day);
       final isToday = date == todayDate;
@@ -226,22 +489,15 @@ class _CalendarGrid extends StatelessWidget {
       final dayEvents = events[date] ?? [];
       final hasEvents = dayEvents.isNotEmpty;
 
-      // Get event type colors for dots
       final dotColors = <Color>{};
       for (final e in dayEvents) {
-        switch (e['color'] as String?) {
-          case 'primary': dotColors.add(AppColors.primary);
-          case 'success': dotColors.add(AppColors.success);
-          case 'error': dotColors.add(AppColors.error);
-          case 'warning': dotColors.add(AppColors.warning);
-          case 'purple': dotColors.add(AppColors.purple);
-          default: dotColors.add(AppColors.info);
-        }
+        dotColors.add(_dotColor(e['color'] as String?));
       }
 
       cells.add(
         GestureDetector(
           onTap: () => onDayTap(date),
+          onLongPress: () => onDayLongPress(date),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             decoration: BoxDecoration(
@@ -303,9 +559,23 @@ class _CalendarGrid extends StatelessWidget {
       ),
     );
   }
+
+  Color _dotColor(String? colorName) {
+    switch (colorName) {
+      case 'primary': return AppColors.primary;
+      case 'success': return AppColors.success;
+      case 'error': return AppColors.error;
+      case 'warning': return AppColors.warning;
+      case 'purple': return AppColors.purple;
+      case 'teal': return Colors.teal;
+      case 'pink': return Colors.pink;
+      default: return AppColors.info;
+    }
+  }
 }
 
-// ==================== EVENT TILE ====================
+// ────────────────── EVENT TILE ──────────────────
+
 class _EventTile extends StatelessWidget {
   final Map<String, dynamic> event;
   const _EventTile({required this.event});
@@ -317,16 +587,28 @@ class _EventTile extends StatelessWidget {
       case 'error': return AppColors.error;
       case 'warning': return AppColors.warning;
       case 'purple': return AppColors.purple;
+      case 'teal': return Colors.teal;
+      case 'pink': return Colors.pink;
       default: return AppColors.info;
     }
   }
 
   IconData _getIcon() {
     switch (event['type'] as String?) {
-      case 'todo': return event['isCompleted'] == true ? Icons.check_circle_rounded : Icons.circle_outlined;
-      case 'transaction': return event['txType'] == 'income' ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded;
+      case 'todo': return event['isCompleted'] == true
+          ? Icons.check_circle_rounded
+          : Icons.circle_outlined;
+      case 'transaction':
+        return event['txType'] == 'income'
+            ? Icons.arrow_downward_rounded
+            : Icons.arrow_upward_rounded;
       case 'habit': return Icons.trending_up_rounded;
       case 'routine': return Icons.repeat_rounded;
+      case 'focus': return Icons.timer_outlined;
+      case 'debt': return event['isSettled'] == true
+          ? Icons.check_circle_rounded
+          : Icons.money_rounded;
+      case 'birthday': return Icons.cake_rounded;
       default: return Icons.circle;
     }
   }
@@ -337,6 +619,9 @@ class _EventTile extends StatelessWidget {
       case 'transaction': return 'Transaction';
       case 'habit': return 'Habit';
       case 'routine': return 'Routine';
+      case 'focus': return 'Focus Session';
+      case 'debt': return 'Debt';
+      case 'birthday': return 'Birthday';
       default: return '';
     }
   }
@@ -347,9 +632,9 @@ class _EventTile extends StatelessWidget {
     final color = _getColor();
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 6),
       child: AppCard(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: Row(
           children: [
             Container(
@@ -368,17 +653,38 @@ class _EventTile extends StatelessWidget {
                 children: [
                   Text(
                     event['title'] as String? ?? '',
-                    style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurface),
-                    maxLines: 1,
+                    style: AppTypography.bodyMedium.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      decoration: event['isCompleted'] == true
+                          ? TextDecoration.lineThrough
+                          : null,
+                    ),
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 2),
                   Text(
                     _getTypeLabel(),
-                    style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    style: AppTypography.labelSmall.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ],
               ),
             ),
+            if (event['type'] == 'todo' && (event['priority'] as int? ?? 0) > 0)
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: event['priority'] == 3
+                      ? AppColors.error
+                      : event['priority'] == 2
+                          ? AppColors.warning
+                          : AppColors.info,
+                  shape: BoxShape.circle,
+                ),
+              ),
           ],
         ),
       ),

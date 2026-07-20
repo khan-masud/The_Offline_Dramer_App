@@ -446,37 +446,47 @@ class NotificationService {
     required bool remindDayBefore,
     required bool remindOnDay,
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
+    int hour = 0,
+    int minute = 0,
   }) async {
     if (kIsWeb || !_isInitialized) return;
 
     await cancelBirthdayReminders(birthdayId);
 
     final now = tz.TZDateTime.now(tz.local);
+    final localDob = dateOfBirth.toLocal();
 
     if (remindDayBefore) {
-      final dayBefore = DateTime(now.year, dateOfBirth.month, dateOfBirth.day).subtract(const Duration(days: 1));
+      final dayBefore = DateTime(now.year, localDob.month, localDob.day).subtract(const Duration(days: 1));
       tz.TZDateTime scheduled = tz.TZDateTime(
         tz.local,
         dayBefore.year,
         dayBefore.month,
         dayBefore.day,
-        0,
-        0,
+        hour,
+        minute,
       );
+      bool useRepeat = true;
       if (!scheduled.isAfter(now)) {
-        scheduled = tz.TZDateTime(
-          tz.local,
-          dayBefore.year + 1,
-          dayBefore.month,
-          dayBefore.day,
-          0,
-          0,
-        );
+        final isDayBeforeToday = dayBefore.month == now.month && dayBefore.day == now.day && dayBefore.year == now.year;
+        if (isDayBeforeToday) {
+          scheduled = now.add(const Duration(minutes: 5));
+          useRepeat = false;
+        } else {
+          scheduled = tz.TZDateTime(
+            tz.local,
+            dayBefore.year + 1,
+            dayBefore.month,
+            dayBefore.day,
+            hour,
+            minute,
+          );
+        }
       }
 
       await _notificationsPlugin.zonedSchedule(
         id: _birthdayNotificationId(birthdayId, 1),
-        title: 'Birthday Tomorrow',
+        title: '🎂 Birthday Tomorrow!',
         body: '$personName has a birthday tomorrow.',
         scheduledDate: scheduled,
         notificationDetails: _buildDetails(
@@ -487,7 +497,7 @@ class NotificationService {
           expandedText: '$personName has a birthday tomorrow.',
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.dateAndTime,
+        matchDateTimeComponents: useRepeat ? DateTimeComponents.dateAndTime : null,
       );
     }
 
@@ -495,37 +505,60 @@ class NotificationService {
       tz.TZDateTime scheduled = tz.TZDateTime(
         tz.local,
         now.year,
-        dateOfBirth.month,
-        dateOfBirth.day,
-        0,
-        0,
+        localDob.month,
+        localDob.day,
+        hour,
+        minute,
       );
+      bool scheduleOneOffToday = false;
+
       if (!scheduled.isAfter(now)) {
+        final isToday = localDob.month == now.month && localDob.day == now.day;
+        if (isToday) {
+          scheduleOneOffToday = true;
+        }
         scheduled = tz.TZDateTime(
           tz.local,
           now.year + 1,
-          dateOfBirth.month,
-          dateOfBirth.day,
-          0,
-          0,
+          localDob.month,
+          localDob.day,
+          hour,
+          minute,
         );
       }
 
       await _notificationsPlugin.zonedSchedule(
         id: _birthdayNotificationId(birthdayId, 2),
-        title: 'Birthday Today',
-        body: 'Today is $personName\'s birthday.',
+        title: '🎂 Happy Birthday!',
+        body: 'Today is $personName\'s birthday!',
         scheduledDate: scheduled,
         notificationDetails: _buildDetails(
           channelBaseId: 'birthday_reminders',
           channelBaseName: 'Birthday Reminders',
           channelDescription: 'Reminders for saved birthdays',
           alertMode: alertMode,
-          expandedText: 'Today is $personName\'s birthday.',
+          expandedText: 'Today is $personName\'s birthday!',
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         matchDateTimeComponents: DateTimeComponents.dateAndTime,
       );
+
+      if (scheduleOneOffToday) {
+        await _notificationsPlugin.zonedSchedule(
+          id: _birthdayNotificationId(birthdayId, 3),
+          title: '🎂 Happy Birthday!',
+          body: 'Today is $personName\'s birthday!',
+          scheduledDate: now.add(const Duration(minutes: 5)),
+          notificationDetails: _buildDetails(
+            channelBaseId: 'birthday_reminders',
+            channelBaseName: 'Birthday Reminders',
+            channelDescription: 'Reminders for saved birthdays',
+            alertMode: alertMode,
+            expandedText: 'Today is $personName\'s birthday!',
+          ),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        );
+      }
     }
   }
 
@@ -533,11 +566,14 @@ class NotificationService {
     if (kIsWeb) return;
     await _notificationsPlugin.cancel(id: _birthdayNotificationId(birthdayId, 1));
     await _notificationsPlugin.cancel(id: _birthdayNotificationId(birthdayId, 2));
+    await _notificationsPlugin.cancel(id: _birthdayNotificationId(birthdayId, 3));
   }
 
   Future<void> rescheduleAllBirthdayReminders({
     required List<Birthday> birthdays,
     required ReminderAlertMode alertMode,
+    int hour = 0,
+    int minute = 0,
   }) async {
     if (kIsWeb || !_isInitialized) return;
 
@@ -549,6 +585,8 @@ class NotificationService {
         remindDayBefore: birthday.remindDayBefore,
         remindOnDay: birthday.remindOnDay,
         alertMode: alertMode,
+        hour: hour,
+        minute: minute,
       );
     }
   }

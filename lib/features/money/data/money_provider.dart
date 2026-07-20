@@ -8,12 +8,14 @@ const String currencySymbol = '৳';
 // Expense categories
 const List<String> expenseCategories = [
   'Food', 'Transport', 'Shopping', 'Bills',
-  'Health', 'Education', 'Entertainment', 'Other',
+  'Health', 'Education', 'Entertainment',
+  'Debt Given', 'Debt Repaid', 'Other',
 ];
 
 // Income categories
 const List<String> incomeCategories = [
-  'Salary', 'Freelance', 'Gift', 'Other',
+  'Salary', 'Freelance', 'Gift',
+  'Debt Received', 'Debt Settled', 'Other',
 ];
 
 // Category icons
@@ -28,6 +30,10 @@ const Map<String, String> categoryIcons = {
   'Salary': '💰',
   'Freelance': '💻',
   'Gift': '🎁',
+  'Debt Given': '📤',
+  'Debt Repaid': '💸',
+  'Debt Received': '📥',
+  'Debt Settled': '💰',
   'Other': '📌',
 };
 

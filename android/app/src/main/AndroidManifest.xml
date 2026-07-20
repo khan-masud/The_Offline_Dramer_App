@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
-        android:label="The Offline Dreamer"
+        android:label="Me++"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <!-- Required by image_cropper (uCrop) on Android -->

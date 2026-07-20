@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
@@ -14,6 +15,30 @@ import '../../../../core/database/database_provider.dart';
 import '../../../../core/providers/undo_provider.dart';
 import '../../../../core/providers/activity_log_provider.dart';
 import '../../data/links_provider.dart';
+
+/// Fetches a page title from a URL by reading the <title> tag.
+Future<String?> fetchUrlTitle(String urlString) async {
+  try {
+    var normalized = urlString.trim();
+    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+      normalized = 'https://$normalized';
+    }
+    final response = await http.get(
+      Uri.parse(normalized),
+      headers: {'User-Agent': 'Mozilla/5.0 (Linux; Android 14)'},
+    ).timeout(const Duration(seconds: 8));
+    if (response.statusCode != 200) return null;
+    final html = response.body;
+    final titleRegExp = RegExp(r'<title[^>]*>(.*?)</title>', caseSensitive: false, dotAll: true);
+    final match = titleRegExp.firstMatch(html);
+    if (match != null && match.group(1) != null) {
+      return match.group(1)!.trim();
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
 
 class LinksScreen extends ConsumerWidget {
   const LinksScreen({super.key});
@@ -257,9 +282,17 @@ class LinksScreen extends ConsumerWidget {
   }
 
   Future<void> _openLink(String urlString) async {
-    final url = Uri.tryParse(urlString);
-    if (url != null && await canLaunchUrl(url)) {
+    var normalized = urlString.trim();
+    if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+      normalized = 'https://$normalized';
+    }
+    final url = Uri.parse(normalized);
+    try {
       await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      try {
+        await launchUrl(url, mode: LaunchMode.inAppBrowserView);
+      } catch (_) {}
     }
   }
 
@@ -615,6 +648,7 @@ class _AddLinkSheetState extends ConsumerState<_AddLinkSheet> {
   late TextEditingController _urlCtrl;
   late TextEditingController _noteCtrl;
   String? _selectedFolder;
+  bool _isFetchingTitle = false;
 
   @override
   void initState() {
@@ -637,7 +671,24 @@ class _AddLinkSheetState extends ConsumerState<_AddLinkSheet> {
         setState(() {
           _urlCtrl.text = text;
         });
+        // Auto-fetch title for clipboard URL if title is empty
+        if (_titleCtrl.text.isEmpty) _autoFetchTitle();
       }
+    }
+  }
+
+  Future<void> _autoFetchTitle() async {
+    final url = _urlCtrl.text.trim();
+    if (url.isEmpty || _titleCtrl.text.isNotEmpty) return;
+    setState(() => _isFetchingTitle = true);
+    final title = await fetchUrlTitle(url);
+    if (title != null && mounted && _titleCtrl.text.isEmpty) {
+      setState(() {
+        _titleCtrl.text = title;
+        _isFetchingTitle = false;
+      });
+    } else if (mounted) {
+      setState(() => _isFetchingTitle = false);
     }
   }
 
@@ -745,11 +796,31 @@ class _AddLinkSheetState extends ConsumerState<_AddLinkSheet> {
             controller: _urlCtrl,
             decoration: const InputDecoration(labelText: 'URL*', hintText: 'https://...', prefixIcon: Icon(Icons.link_rounded)),
             keyboardType: TextInputType.url,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _autoFetchTitle(),
+            onChanged: (v) {
+              if (v.trim().isNotEmpty && _titleCtrl.text.isEmpty) {
+                Future.delayed(const Duration(milliseconds: 800), () {
+                  if (_urlCtrl.text.trim() == v.trim() && _titleCtrl.text.isEmpty) {
+                    _autoFetchTitle();
+                  }
+                });
+              }
+            },
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _titleCtrl,
-            decoration: const InputDecoration(labelText: 'Title*', prefixIcon: Icon(Icons.title_rounded)),
+            decoration: InputDecoration(
+              labelText: 'Title*',
+              prefixIcon: const Icon(Icons.title_rounded),
+              suffixIcon: _isFetchingTitle
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : null,
+            ),
             textCapitalization: TextCapitalization.sentences,
           ),
           const SizedBox(height: 16),

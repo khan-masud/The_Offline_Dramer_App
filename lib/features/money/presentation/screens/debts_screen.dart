@@ -562,7 +562,12 @@ class _DebtDetailScreen extends ConsumerWidget {
                   icon: const Icon(Icons.check_circle_outline_rounded),
                   tooltip: 'Mark as settled',
                   onPressed: () async {
-                    await ref.read(databaseProvider).settleDebt(debtId);
+                    final db = ref.read(databaseProvider);
+                    if (debt.linkedToWallet) {
+                      await db.settleDebtWithWallet(debtId);
+                    } else {
+                      await db.settleDebt(debtId);
+                    }
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Marked as settled ✅')),
@@ -574,7 +579,14 @@ class _DebtDetailScreen extends ConsumerWidget {
                 IconButton(
                   icon: const Icon(Icons.undo_rounded),
                   tooltip: 'Reopen',
-                  onPressed: () => ref.read(databaseProvider).unsettleDebt(debtId),
+                  onPressed: () async {
+                    final db = ref.read(databaseProvider);
+                    if (debt.linkedToWallet && debt.settlementTransactionId != null) {
+                      await db.unsettleDebtWithWallet(debtId);
+                    } else {
+                      await db.unsettleDebt(debtId);
+                    }
+                  },
                 ),
             ],
           ),
@@ -1039,6 +1051,7 @@ class _AddEditDebtSheetState extends ConsumerState<_AddEditDebtSheet> {
   late TextEditingController _phoneCtrl;
   String _type = 'given';
   DateTime? _dueDate;
+  bool _linkToWallet = false;
 
   bool get isEditing => widget.debt != null;
 
@@ -1055,6 +1068,7 @@ class _AddEditDebtSheetState extends ConsumerState<_AddEditDebtSheet> {
     _phoneCtrl = TextEditingController(text: widget.debt?.phone ?? '');
     _type = widget.debt?.type ?? 'given';
     _dueDate = widget.debt?.dueDate;
+    _linkToWallet = widget.debt?.linkedToWallet ?? false;
   }
 
   @override
@@ -1089,16 +1103,30 @@ class _AddEditDebtSheetState extends ConsumerState<_AddEditDebtSheet> {
         updatedAt: Value(now),
       ));
     } else {
-      await db.addDebt(DebtsCompanion(
-        personName: Value(name),
-        amount: Value(amount),
-        type: Value(_type),
-        note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
-        phone: Value(_phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim()),
-        dueDate: Value(_dueDate),
-        createdAt: Value(now),
-        updatedAt: Value(now),
-      ));
+      if (_linkToWallet) {
+        await db.addDebtWithWallet(DebtsCompanion(
+          personName: Value(name),
+          amount: Value(amount),
+          type: Value(_type),
+          note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
+          phone: Value(_phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim()),
+          dueDate: Value(_dueDate),
+          linkedToWallet: const Value(true),
+          createdAt: Value(now),
+          updatedAt: Value(now),
+        ));
+      } else {
+        await db.addDebt(DebtsCompanion(
+          personName: Value(name),
+          amount: Value(amount),
+          type: Value(_type),
+          note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
+          phone: Value(_phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim()),
+          dueDate: Value(_dueDate),
+          createdAt: Value(now),
+          updatedAt: Value(now),
+        ));
+      }
     }
 
     if (mounted) Navigator.pop(context);
@@ -1225,6 +1253,59 @@ class _AddEditDebtSheetState extends ConsumerState<_AddEditDebtSheet> {
               ),
             ),
             const SizedBox(height: 12),
+
+            // Wallet link toggle
+            if (!isEditing)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _linkToWallet
+                      ? AppColors.primary.withValues(alpha: 0.08)
+                      : theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
+                  border: Border.all(
+                    color: _linkToWallet ? AppColors.primary.withValues(alpha: 0.3) : theme.colorScheme.outline.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.account_balance_wallet_rounded,
+                      size: 20,
+                      color: _linkToWallet ? AppColors.primary : theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Link to Wallet',
+                            style: AppTypography.bodyMedium.copyWith(
+                              color: theme.colorScheme.onSurface,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            _type == 'given'
+                                ? 'Amount will be deducted from your balance'
+                                : 'Amount will be added to your balance',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _linkToWallet,
+                      onChanged: (v) => setState(() => _linkToWallet = v),
+                      activeColor: AppColors.primary,
+                    ),
+                  ],
+                ),
+              ),
+            if (!isEditing) const SizedBox(height: 12),
 
             // Phone (optional)
             TextField(

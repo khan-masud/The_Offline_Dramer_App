@@ -30,6 +30,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
   bool _isRecurring = false;
   String _recurringPattern = 'monthly';
   final List<String> _recurringOptions = ['daily', 'weekly', 'monthly', 'yearly'];
+  bool _isSaving = false;
 
   bool get isEditing => widget.transaction != null;
 
@@ -61,50 +62,113 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
   List<String> get _categories => _type == 'expense' ? expenseCategories : incomeCategories;
 
   Future<void> _save() async {
-    final amount = double.tryParse(_amountCtrl.text.trim());
-    if (amount == null || amount <= 0) return;
-    if (_titleCtrl.text.trim().isEmpty) return;
+    if (_isSaving) return;
+    
+    final amountText = _amountCtrl.text.trim();
+    final amount = double.tryParse(amountText);
+    if (amount == null || amount <= 0) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a valid amount')),
+        );
+      }
+      return;
+    }
+    if (_titleCtrl.text.trim().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please enter a title')),
+        );
+      }
+      return;
+    }
 
+    setState(() => _isSaving = true);
     final db = ref.read(databaseProvider);
     final now = DateTime.now();
 
-    if (isEditing) {
-      await db.updateTransaction(TransactionsCompanion(
-        id: Value(widget.transaction!.id),
-        amount: Value(amount),
-        type: Value(_type),
-        title: Value(_titleCtrl.text.trim()),
-        category: Value(_category),
-        note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
-        date: Value(_date),
-        isRecurring: Value(_isRecurring),
-        recurringPattern: Value(_isRecurring ? _recurringPattern : null),
-        createdAt: Value(widget.transaction!.createdAt),
-      ));
-      ref.read(activityLogProvider.notifier).log(
-        type: 'update',
-        entityType: 'transaction',
-        entityTitle: _titleCtrl.text.trim(),
-      );
-    } else {
-      await db.addTransaction(TransactionsCompanion(
-        amount: Value(amount),
-        type: Value(_type),
-        title: Value(_titleCtrl.text.trim()),
-        category: Value(_category),
-        note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
-        date: Value(_date),
-        isRecurring: Value(_isRecurring),
-        recurringPattern: Value(_isRecurring ? _recurringPattern : null),
-        createdAt: Value(now),
-      ));
-      ref.read(activityLogProvider.notifier).log(
-        type: 'add',
-        entityType: 'transaction',
-        entityTitle: _titleCtrl.text.trim(),
-      );
-    }
+    try {
+      if (isEditing) {
+        await db.updateTransaction(TransactionsCompanion(
+          id: Value(widget.transaction!.id),
+          amount: Value(amount),
+          type: Value(_type),
+          title: Value(_titleCtrl.text.trim()),
+          category: Value(_category),
+          note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
+          date: Value(_date),
+          isRecurring: Value(_isRecurring),
+          recurringPattern: Value(_isRecurring ? _recurringPattern : null),
+          createdAt: Value(widget.transaction!.createdAt),
+        ));
+        ref.read(activityLogProvider.notifier).log(
+          type: 'update',
+          entityType: 'transaction',
+          entityTitle: _titleCtrl.text.trim(),
+        );
+      } else {
+        await db.addTransaction(TransactionsCompanion(
+          amount: Value(amount),
+          type: Value(_type),
+          title: Value(_titleCtrl.text.trim()),
+          category: Value(_category),
+          note: Value(_noteCtrl.text.trim().isEmpty ? null : _noteCtrl.text.trim()),
+          date: Value(_date),
+          isRecurring: Value(_isRecurring),
+          recurringPattern: Value(_isRecurring ? _recurringPattern : null),
+          createdAt: Value(now),
+        ));
+        ref.read(activityLogProvider.notifier).log(
+          type: 'add',
+          entityType: 'transaction',
+          entityTitle: _titleCtrl.text.trim(),
+        );
+      }
 
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      setState(() => _isSaving = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error saving transaction: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _delete() async {
+    if (!isEditing) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Transaction?'),
+        content: Text(
+          'Are you sure you want to delete "${widget.transaction!.title}"? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Delete',
+              style: TextStyle(color: AppColors.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final db = ref.read(databaseProvider);
+    await db.deleteTransaction(widget.transaction!.id);
+    ref.read(activityLogProvider.notifier).log(
+      type: 'delete',
+      entityType: 'transaction',
+      entityTitle: widget.transaction!.title,
+    );
     if (mounted) Navigator.pop(context);
   }
 
@@ -141,9 +205,20 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
               ),
             ),
             const SizedBox(height: 20),
-            Text(
-              isEditing ? 'Edit Transaction' : 'New Transaction',
-              style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface),
+            Row(
+              children: [
+                Text(
+                  isEditing ? 'Edit Transaction' : 'New Transaction',
+                  style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface),
+                ),
+                const Spacer(),
+                if (isEditing)
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+                    onPressed: _delete,
+                    tooltip: 'Delete Transaction',
+                  ),
+              ],
             ),
             const SizedBox(height: 16),
 
@@ -307,20 +382,23 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
             const SizedBox(height: 12),
 
             // Recurring Options
-            SwitchListTile(
-              title: Text('Make this recurring', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-              value: _isRecurring,
-              onChanged: (v) {
-                HapticFeedback.lightImpact();
-                setState(() => _isRecurring = v);
-              },
-              activeThumbColor: AppColors.primary,
-              contentPadding: EdgeInsets.zero,
+            Material(
+              color: Colors.transparent,
+              child: SwitchListTile(
+                title: Text('Make this recurring', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
+                value: _isRecurring,
+                onChanged: (v) {
+                  HapticFeedback.lightImpact();
+                  setState(() => _isRecurring = v);
+                },
+                activeThumbColor: AppColors.primary,
+                contentPadding: EdgeInsets.zero,
+              ),
             ),
             if (_isRecurring) ...[
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                initialValue: _recurringPattern,
+                value: _recurringPattern,
                 items: _recurringOptions.map((e) => DropdownMenuItem(value: e, child: Text(e[0].toUpperCase() + e.substring(1)))).toList(),
                 onChanged: (v) { if (v != null) setState(() => _recurringPattern = v); },
                 decoration: const InputDecoration(
@@ -344,19 +422,40 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _save,
+                onPressed: _isSaving ? null : _save,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _type == 'income' ? AppColors.success : AppColors.primary,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Text(
-                    isEditing ? 'Save Changes' : (_type == 'income' ? 'Add Income' : 'Add Expense'),
-                    style: AppTypography.labelLarge.copyWith(color: Colors.white),
-                  ),
+                  child: _isSaving
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : Text(
+                          isEditing ? 'Save Changes' : (_type == 'income' ? 'Add Income' : 'Add Expense'),
+                          style: AppTypography.labelLarge.copyWith(color: Colors.white),
+                        ),
                 ),
               ),
             ),
+            if (isEditing) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _delete,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: AppColors.error.withValues(alpha: 0.5)),
+                    foregroundColor: AppColors.error,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                  label: Text(
+                    'Delete Transaction',
+                    style: AppTypography.labelLarge.copyWith(color: AppColors.error),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
           ],
         ),

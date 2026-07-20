@@ -1,11 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:open_filex/open_filex.dart';
-import 'package:path/path.dart' as p;
-import 'package:share_plus/share_plus.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -19,6 +17,7 @@ import '../../../../core/services/backup_service.dart';
 import '../../../../core/services/incomplete_reminder_scheduler.dart';
 import '../../../../core/services/notification_service.dart';
 import '../../../auth/presentation/screens/pin_setup_screen.dart';
+import '../../../dashboard/data/weather_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -38,206 +37,392 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final themeMode = ref.watch(themeModeProvider);
     final authState = ref.watch(authProvider);
     final notificationPrefs = ref.watch(notificationPreferencesProvider);
+    final weatherApiKeyAsync = ref.watch(weatherApiKeyProvider);
+
     final isDark = themeMode == ThemeMode.dark;
     final reminderTimeText = MaterialLocalizations.of(context).formatTimeOfDay(
       notificationPrefs.routineReminderTime,
       alwaysUse24HourFormat: MediaQuery.of(context).alwaysUse24HourFormat,
     );
+    final birthdayTimeText = MaterialLocalizations.of(context).formatTimeOfDay(
+      notificationPrefs.birthdayReminderTime,
+      alwaysUse24HourFormat: MediaQuery.of(context).alwaysUse24HourFormat,
+    );
     final incompleteIntervalText = _incompleteIntervalLabel(
       notificationPrefs.incompleteReminderIntervalHours,
     );
+    final currentCustomKey = weatherApiKeyAsync.value ?? '';
+    final weatherKeyStatus = currentCustomKey.isNotEmpty
+        ? 'Custom key: ${currentCustomKey.substring(0, currentCustomKey.length > 8 ? 8 : currentCustomKey.length)}...'
+        : 'Using default key';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
+      appBar: AppBar(
+        title: const Text('Settings'),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(AppDimensions.base),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         physics: const BouncingScrollPhysics(),
         children: [
-          // Profile
-          _SectionTitle(title: 'Profile'),
-          const SizedBox(height: AppDimensions.sm),
-          AppCard(
-            child: Column(
-              children: [
-                _SettingsTile(
-                  icon: Icons.person_outline_rounded,
-                  iconColor: AppColors.info,
-                  title: profile.name,
-                  subtitle: profile.hasPhoto ? 'Profile picture linked' : 'No profile picture set',
-                  trailing: CircleAvatar(
-                    radius: 16,
-                    backgroundColor: AppColors.primary.withValues(alpha: 0.1),
-                    backgroundImage: profile.imageProvider,
-                    child: !profile.hasPhoto
-                        ? Text(
-                            profile.name.isEmpty ? 'D' : profile.name.substring(0, 1).toUpperCase(),
-                            style: AppTypography.labelMedium.copyWith(color: AppColors.primaryDark),
-                          )
-                        : null,
-                  ),
-                  onTap: () => _showEditProfileSheet(context),
-                ),
-                Divider(height: 1, color: theme.colorScheme.outline),
-                _SettingsTile(
-                  icon: Icons.edit_note_rounded,
-                  iconColor: AppColors.primary,
-                  title: _isSavingProfile ? 'Saving profile...' : 'Edit name & photo',
-                  subtitle: 'Use your name for dashboard greeting',
-                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
-                  onTap: _isSavingProfile ? null : () => _showEditProfileSheet(context),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: AppDimensions.xl),
+          // Profile Header Card
+          _buildProfileHeader(theme, profile),
+          const SizedBox(height: 24),
 
           // Appearance
-          _SectionTitle(title: 'Appearance'),
-          const SizedBox(height: AppDimensions.sm),
+          _sectionLabel(context, 'Appearance & Theme', Icons.palette_outlined),
           AppCard(
-            child: Column(
-              children: [
-                _SettingsTile(
-                  icon: Icons.dark_mode_outlined,
-                  iconColor: AppColors.purple,
-                  title: 'Dark Mode',
-                  trailing: Switch(
-                    value: isDark,
-                    onChanged: (_) => ref.read(themeModeProvider.notifier).toggle(),
-                  ),
-                ),
-              ],
+            padding: EdgeInsets.zero,
+            child: _tile(
+              context: context,
+              icon: Icons.dark_mode_outlined,
+              iconColor: AppColors.purple,
+              title: 'Dark Mode',
+              subtitle: isDark ? 'Dark theme is on' : 'Light theme is on',
+              trailing: Switch(
+                value: isDark,
+                onChanged: (_) => ref.read(themeModeProvider.notifier).toggle(),
+              ),
             ),
           ),
-          const SizedBox(height: AppDimensions.xl),
+          const SizedBox(height: 20),
 
           // Security
-          _SectionTitle(title: 'Security'),
-          const SizedBox(height: AppDimensions.sm),
+          _sectionLabel(context, 'Security', Icons.shield_outlined),
           AppCard(
-            child: Column(
-              children: [
-                _SettingsTile(
-                  icon: Icons.lock_outline_rounded,
-                  iconColor: AppColors.primary,
-                  title: 'App Lock',
-                  subtitle: authState.isPinSet ? 'PIN is enabled' : 'No PIN set',
-                  trailing: Switch(
-                    value: authState.isPinSet,
-                    onChanged: (value) {
-                      if (value) {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const PinSetupScreen()),
-                        );
-                      } else {
-                        _showRemovePinDialog(context, ref);
-                      }
-                    },
-                  ),
-                ),
-              ],
+            padding: EdgeInsets.zero,
+            child: _tile(
+              context: context,
+              icon: Icons.lock_outline_rounded,
+              iconColor: AppColors.primary,
+              title: 'App Lock',
+              subtitle: authState.isPinSet ? 'PIN is enabled' : 'No PIN set',
+              trailing: Switch(
+                value: authState.isPinSet,
+                onChanged: (value) {
+                  if (value) {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const PinSetupScreen()),
+                    );
+                  } else {
+                    _showRemovePinDialog(context, ref);
+                  }
+                },
+              ),
             ),
           ),
-          const SizedBox(height: AppDimensions.xl),
+          const SizedBox(height: 20),
+
+          // Integrations
+          _sectionLabel(context, 'Integrations', Icons.api_outlined),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: _tile(
+              context: context,
+              icon: Icons.wb_cloudy_outlined,
+              iconColor: AppColors.teal,
+              title: 'Weather API Key',
+              subtitle: weatherKeyStatus,
+              trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
+              onTap: () => _showWeatherApiKeyDialog(context, currentCustomKey),
+            ),
+          ),
+          const SizedBox(height: 20),
 
           // Notifications
-          _SectionTitle(title: 'Notifications'),
-          const SizedBox(height: AppDimensions.sm),
+          _sectionLabel(context, 'Notifications & Reminders', Icons.notifications_none_rounded),
           AppCard(
+            padding: EdgeInsets.zero,
             child: Column(
               children: [
-                _SettingsTile(
+                _tile(
+                  context: context,
                   icon: Icons.schedule_rounded,
                   iconColor: AppColors.primary,
-                  title: 'Daily Routine Reminder Time',
+                  title: 'Daily Routine Reminder',
                   subtitle: reminderTimeText,
-                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
                   onTap: () => _pickDailyReminderTime(context),
                 ),
-                Divider(height: 1, color: theme.colorScheme.outline),
-                _SettingsTile(
+                _divider(theme),
+                _tile(
+                  context: context,
                   icon: Icons.notifications_active_rounded,
                   iconColor: AppColors.warning,
                   title: 'Reminder Type',
                   subtitle: _alertModeLabel(notificationPrefs.alertMode),
-                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
                   onTap: () => _pickAlertMode(context),
                 ),
-                Divider(height: 1, color: theme.colorScheme.outline),
-                _SettingsTile(
+                _divider(theme),
+                _tile(
+                  context: context,
                   icon: Icons.repeat_rounded,
                   iconColor: AppColors.info,
-                  title: 'Incomplete Reminder Repeat',
+                  title: 'Incomplete Reminder Interval',
                   subtitle: incompleteIntervalText,
-                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
                   onTap: () => _pickIncompleteReminderInterval(context),
+                ),
+                _divider(theme),
+                _tile(
+                  context: context,
+                  icon: Icons.cake_outlined,
+                  iconColor: AppColors.pink,
+                  title: 'Birthday Notification Time',
+                  subtitle: birthdayTimeText,
+                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
+                  onTap: () => _pickBirthdayReminderTime(context),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: AppDimensions.xl),
+          const SizedBox(height: 20),
 
-          // Data
-          _SectionTitle(title: 'Data & Backup'),
-          const SizedBox(height: AppDimensions.sm),
+          // Data & Backups
+          _sectionLabel(context, 'Data & Backups', Icons.storage_outlined),
           AppCard(
+            padding: EdgeInsets.zero,
             child: Column(
               children: [
-                _SettingsTile(
-                  icon: Icons.cloud_upload_outlined,
-                  iconColor: AppColors.info,
-                  title: 'Auto Backup',
-                  subtitle: 'Every 7 days to Google Drive',
-                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
-                  onTap: () {},
-                ),
-                Divider(height: 1, color: theme.colorScheme.outline),
-                _SettingsTile(
+                _tile(
+                  context: context,
                   icon: Icons.download_outlined,
                   iconColor: AppColors.success,
-                  title: _isBackupBusy ? 'Processing...' : 'Manual Backup',
-                  subtitle: 'Save full app backup file',
-                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  title: _isBackupBusy ? 'Processing...' : 'Create Backup',
+                  subtitle: 'Export all app data to a zip file',
+                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
                   onTap: _isBackupBusy ? null : _runManualBackup,
                 ),
-                Divider(height: 1, color: theme.colorScheme.outline),
-                _SettingsTile(
+                _divider(theme),
+                _tile(
+                  context: context,
                   icon: Icons.restore_rounded,
                   iconColor: AppColors.warning,
-                  title: 'Restore',
-                  subtitle: 'Restore entire app from backup file',
-                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  title: 'Restore Backup',
+                  subtitle: 'Import and restore from backup file',
+                  trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
                   onTap: _isBackupBusy ? null : _confirmRestore,
                 ),
               ],
             ),
           ),
-          const SizedBox(height: AppDimensions.xl),
+          const SizedBox(height: 20),
 
           // About
-          _SectionTitle(title: 'About'),
-          const SizedBox(height: AppDimensions.sm),
+          _sectionLabel(context, 'About', Icons.info_outline_rounded),
           AppCard(
+            padding: EdgeInsets.zero,
             child: Column(
               children: [
-                _SettingsTile(
-                  icon: Icons.info_outline_rounded,
+                _tile(
+                  context: context,
+                  icon: Icons.tag_rounded,
                   iconColor: AppColors.teal,
                   title: 'Version',
-                  subtitle: '3.3.17',
+                  subtitle: '1.0.0 (beta)',
                 ),
-                Divider(height: 1, color: theme.colorScheme.outline),
-                _SettingsTile(
+                _divider(theme),
+                _tile(
+                  context: context,
                   icon: Icons.favorite_outline_rounded,
                   iconColor: AppColors.pink,
-                  title: 'Developed by ❤️',
+                  title: 'Developed by',
                   subtitle: 'Abdullah Al Masud',
                 ),
               ],
             ),
           ),
-          const SizedBox(height: AppDimensions.xxl),
+          const SizedBox(height: 40),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader(ThemeData theme, UserProfileState profile) {
+    final displayName = profile.name.isEmpty ? 'User' : profile.name;
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppColors.primary, AppColors.primaryDark],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 36,
+            backgroundColor: Colors.white.withValues(alpha: 0.2),
+            backgroundImage: profile.imageProvider,
+            child: !profile.hasPhoto
+                ? Text(
+                    displayName.substring(0, 1).toUpperCase(),
+                    style: AppTypography.headingLarge.copyWith(color: Colors.white),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  style: AppTypography.headingMedium.copyWith(color: Colors.white),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  profile.hasPhoto ? 'Profile photo is set' : 'Tap to personalize',
+                  style: AppTypography.bodySmall.copyWith(color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined, color: Colors.white, size: 22),
+            onPressed: _isSavingProfile ? null : () => _showEditProfileSheet(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionLabel(BuildContext context, String title, IconData icon) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 10),
+      child: Row(
+        children: [
+          Icon(icon, size: 15, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            title.toUpperCase(),
+            style: AppTypography.labelSmall.copyWith(
+              color: theme.colorScheme.primary,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _divider(ThemeData theme) =>
+      Divider(height: 1, indent: 56, color: theme.colorScheme.outline.withValues(alpha: 0.4));
+
+  Widget _tile({
+    required BuildContext context,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+    VoidCallback? onTap,
+  }) {
+    final theme = Theme.of(context);
+    return Material(
+      color: Colors.transparent,
+      child: ListTile(
+        onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+        leading: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: iconColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        title: Text(
+          title,
+          style: AppTypography.labelLarge.copyWith(
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: subtitle != null
+            ? Text(
+                subtitle,
+                style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              )
+            : null,
+        trailing: trailing,
+      ),
+    );
+  }
+
+  void _showWeatherApiKeyDialog(BuildContext context, String currentKey) {
+    final ctrl = TextEditingController(text: currentKey);
+    bool obscure = true;
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.wb_cloudy_outlined, color: AppColors.teal, size: 22),
+              const SizedBox(width: 8),
+              const Text('Weather API Key'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter your WeatherAPI.com key for dashboard weather. Leave empty to use the built-in default.',
+                style: AppTypography.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: ctrl,
+                obscureText: obscure,
+                decoration: InputDecoration(
+                  labelText: 'API Key',
+                  hintText: 'Paste your key here...',
+                  border: const OutlineInputBorder(),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                    onPressed: () => setDialogState(() => obscure = !obscure),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(
+              onPressed: () async {
+                await ref.read(weatherApiKeyProvider.notifier).saveKey('');
+                ctrl.clear();
+                setDialogState(() {});
+              },
+              child: const Text('Clear'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final newKey = ctrl.text.trim();
+                await ref.read(weatherApiKeyProvider.notifier).saveKey(newKey);
+                ref.invalidate(weatherProvider);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(newKey.isEmpty ? 'Reverted to default key' : 'Weather API key saved!'),
+                    ),
+                  );
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -255,18 +440,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       builder: (ctx) {
         final theme = Theme.of(ctx);
         final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
-
         return StatefulBuilder(
           builder: (ctx, setSheetState) {
-            final previewName = nameCtrl.text.trim().isEmpty ? 'Dreamer' : nameCtrl.text.trim();
-
+            final previewName = nameCtrl.text.trim().isEmpty ? 'User' : nameCtrl.text.trim();
             ImageProvider? avatarImage;
             if (pickedImageBytes != null) {
               avatarImage = MemoryImage(pickedImageBytes!);
             } else {
               avatarImage = current.imageProvider;
             }
-
             return AnimatedPadding(
               duration: const Duration(milliseconds: 180),
               padding: EdgeInsets.only(bottom: bottomInset),
@@ -275,114 +457,91 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   color: theme.colorScheme.surface,
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 40,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: theme.colorScheme.outline,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.outline,
+                        borderRadius: BorderRadius.circular(2),
                       ),
-                      const SizedBox(height: 16),
-                      Text('Edit Profile', style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface)),
-                      const SizedBox(height: 16),
-                      Center(
-                        child: Stack(
-                          children: [
-                            CircleAvatar(
-                              radius: 40,
-                              backgroundColor: AppColors.primary.withValues(alpha: 0.12),
-                              backgroundImage: avatarImage,
-                              child: avatarImage == null
-                                  ? Text(previewName.substring(0, 1).toUpperCase(), style: AppTypography.headingSmall.copyWith(color: AppColors.primaryDark))
-                                  : null,
-                            ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: GestureDetector(
-                                onTap: () async {
-                                  final cropped = await _pickAndCropImage(context);
-                                  if (cropped != null) {
-                                    setSheetState(() {
-                                      pickedImage = cropped.file;
-                                      pickedImageBytes = cropped.bytes;
-                                    });
-                                  }
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(Icons.camera_alt_rounded, size: 16, color: Colors.white),
-                                ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Edit Profile', style: AppTypography.headingMedium),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: Stack(
+                        children: [
+                          CircleAvatar(
+                            radius: 40,
+                            backgroundColor: AppColors.primary.withValues(alpha: 0.12),
+                            backgroundImage: avatarImage,
+                            child: avatarImage == null
+                                ? Text(previewName.substring(0, 1).toUpperCase(),
+                                    style: AppTypography.headingSmall.copyWith(color: AppColors.primaryDark))
+                                : null,
+                          ),
+                          Positioned(
+                            bottom: 0, right: 0,
+                            child: GestureDetector(
+                              onTap: () async {
+                                final cropped = await _pickAndCropImage(context);
+                                if (cropped != null) {
+                                  setSheetState(() {
+                                    pickedImage = cropped.file;
+                                    pickedImageBytes = cropped.bytes;
+                                  });
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                                child: const Icon(Icons.camera_alt_rounded, size: 16, color: Colors.white),
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (avatarImage != null)
-                        Center(
-                          child: TextButton(
-                            onPressed: () {
-                              setSheetState(() {
-                                pickedImage = null;
-                                pickedImageBytes = null;
-                              });
-                              if (current.hasPhoto) {
-                                ref.read(userProfileProvider.notifier).removeProfileImage();
-                              }
-                            },
-                            child: const Text('Remove Photo', style: TextStyle(color: AppColors.error)),
                           ),
-                        ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: nameCtrl,
-                        onChanged: (_) => setSheetState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'Your name',
-                          hintText: 'Type your name',
-                        ),
+                        ],
                       ),
-                      const SizedBox(height: 18),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () async {
-                            setState(() => _isSavingProfile = true);
-                            
-                            await ref.read(userProfileProvider.notifier).saveName(nameCtrl.text);
-                            if (pickedImage != null) {
-                              await ref.read(userProfileProvider.notifier).saveProfileImage(
-                                pickedImage!,
-                                imageBytes: pickedImageBytes,
-                              );
-                            }
-                            
-                            if (!mounted) return;
-                            setState(() => _isSavingProfile = false);
-                            if (ctx.mounted) Navigator.pop(ctx);
-                            ScaffoldMessenger.of(this.context).showSnackBar(
-                              const SnackBar(content: Text('Profile updated successfully')),
+                    ),
+                    if (avatarImage != null)
+                      TextButton(
+                        onPressed: () {
+                          setSheetState(() { pickedImage = null; pickedImageBytes = null; });
+                          if (current.hasPhoto) ref.read(userProfileProvider.notifier).removeProfileImage();
+                        },
+                        child: const Text('Remove Photo', style: TextStyle(color: AppColors.error)),
+                      ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nameCtrl,
+                      onChanged: (_) => setSheetState(() {}),
+                      decoration: const InputDecoration(labelText: 'Your name', hintText: 'Type your name'),
+                    ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          setState(() => _isSavingProfile = true);
+                          await ref.read(userProfileProvider.notifier).saveName(nameCtrl.text);
+                          if (pickedImage != null) {
+                            await ref.read(userProfileProvider.notifier).saveProfileImage(
+                              pickedImage!, imageBytes: pickedImageBytes,
                             );
-                          },
-                          child: const Text('Save Profile'),
-                        ),
+                          }
+                          if (!mounted) return;
+                          setState(() => _isSavingProfile = false);
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            const SnackBar(content: Text('Profile updated!')),
+                          );
+                        },
+                        child: const Text('Save Profile'),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -394,83 +553,41 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<({XFile file, Uint8List bytes})?> _pickAndCropImage(BuildContext context) async {
     final picker = ImagePicker();
-    final photo = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 92,
-    );
+    final photo = await picker.pickImage(source: ImageSource.gallery, imageQuality: 92);
     if (photo == null) return null;
     final originalBytes = await photo.readAsBytes();
-
-    if (!context.mounted) {
-      return (file: photo, bytes: originalBytes);
-    }
+    if (!context.mounted) return (file: photo, bytes: originalBytes);
 
     final cropStyle = await showDialog<CropStyle>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Choose crop style'),
+        title: const Text('Crop style'),
         contentPadding: EdgeInsets.zero,
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              leading: const Icon(Icons.circle_outlined),
-              title: const Text('Circle crop'),
-              onTap: () => Navigator.of(ctx).pop(CropStyle.circle),
-            ),
-            ListTile(
-              leading: const Icon(Icons.crop_square_rounded),
-              title: const Text('Square crop'),
-              onTap: () => Navigator.of(ctx).pop(CropStyle.rectangle),
-            ),
+            ListTile(leading: const Icon(Icons.circle_outlined), title: const Text('Circle'), onTap: () => Navigator.pop(ctx, CropStyle.circle)),
+            ListTile(leading: const Icon(Icons.crop_square_rounded), title: const Text('Square'), onTap: () => Navigator.pop(ctx, CropStyle.rectangle)),
           ],
         ),
       ),
     );
-
     if (cropStyle == null) return (file: photo, bytes: originalBytes);
-
-    // image_cropper web integration requires dedicated web ui settings.
-    // To keep this flow reliable on web, use selected image directly.
-    if (kIsWeb) {
-      return (file: photo, bytes: originalBytes);
-    }
-
-    final selectedStyleForAndroid =
-        defaultTargetPlatform == TargetPlatform.android
-            ? CropStyle.rectangle
-            : cropStyle;
+    if (kIsWeb) return (file: photo, bytes: originalBytes);
 
     try {
       final cropped = await ImageCropper().cropImage(
-        sourcePath: photo.path,
-        compressQuality: 92,
+        sourcePath: photo.path, compressQuality: 92,
         aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
         uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'Crop Profile Photo',
-            hideBottomControls: true,
-            lockAspectRatio: true,
-            cropStyle: selectedStyleForAndroid,
-          ),
-          IOSUiSettings(
-            title: 'Crop Profile Photo',
-            aspectRatioLockEnabled: true,
-            cropStyle: cropStyle,
-          ),
+          AndroidUiSettings(toolbarTitle: 'Crop Photo', hideBottomControls: true, lockAspectRatio: true, cropStyle: CropStyle.rectangle),
+          IOSUiSettings(title: 'Crop Photo', aspectRatioLockEnabled: true, cropStyle: cropStyle),
         ],
       );
-
-      // If crop UI is canceled/failed, keep original selection so avatar still updates.
       if (cropped == null) return (file: photo, bytes: originalBytes);
-
       final croppedBytes = await cropped.readAsBytes();
-      return (
-        file: XFile(cropped.path),
-        bytes: croppedBytes,
-      );
+      return (file: XFile(cropped.path), bytes: croppedBytes);
     } catch (e) {
-      debugPrint('Profile crop failed: $e');
       return (file: photo, bytes: originalBytes);
     }
   }
@@ -480,13 +597,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Remove PIN?'),
-        content: const Text('Your app will no longer be protected. Are you sure?'),
+        content: const Text('Your app will no longer be protected.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           TextButton(
             onPressed: () {
               ref.read(authProvider.notifier).removePin();
               Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PIN removed')));
             },
             child: const Text('Remove', style: TextStyle(color: AppColors.error)),
           ),
@@ -495,441 +613,131 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  Future<void> _pickDailyReminderTime(BuildContext context) async {
+    final prefs = ref.read(notificationPreferencesProvider);
+    final time = await showTimePicker(context: context, initialTime: prefs.routineReminderTime);
+    if (time != null) {
+      await ref.read(notificationPreferencesProvider.notifier).setRoutineReminderTime(time);
+      await ref.read(notificationServiceProvider).scheduleGlobalDailyReminder(
+        time: time,
+        alertMode: ref.read(notificationPreferencesProvider).alertMode,
+      );
+    }
+  }
+
+  Future<void> _pickBirthdayReminderTime(BuildContext context) async {
+    final prefs = ref.read(notificationPreferencesProvider);
+    final time = await showTimePicker(context: context, initialTime: prefs.birthdayReminderTime);
+    if (time != null) {
+      await ref.read(notificationPreferencesProvider.notifier).setBirthdayReminderTime(time);
+      final birthdays = await ref.read(databaseProvider).getAllBirthdays();
+      await ref.read(notificationServiceProvider).rescheduleAllBirthdayReminders(
+        birthdays: birthdays,
+        alertMode: ref.read(notificationPreferencesProvider).alertMode,
+        hour: time.hour,
+        minute: time.minute,
+      );
+    }
+  }
+
+  Future<void> _pickAlertMode(BuildContext context) async {
+    final mode = await showDialog<ReminderAlertMode>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Reminder Type'),
+        children: ReminderAlertMode.values.map((m) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(ctx, m),
+          child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(_alertModeLabel(m))),
+        )).toList(),
+      ),
+    );
+    if (mode != null) await ref.read(notificationPreferencesProvider.notifier).setAlertMode(mode);
+  }
+
+  Future<void> _pickIncompleteReminderInterval(BuildContext context) async {
+    final hours = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Repeat Interval'),
+        children: [0, 1, 2, 4, 8, 12, 24].map((h) => SimpleDialogOption(
+          onPressed: () => Navigator.pop(ctx, h),
+          child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(_incompleteIntervalLabel(h))),
+        )).toList(),
+      ),
+    );
+    if (hours != null) {
+      final prefs = ref.read(notificationPreferencesProvider);
+      await ref.read(notificationPreferencesProvider.notifier).setIncompleteReminderIntervalHours(hours);
+      await IncompleteReminderScheduler.refresh(
+        db: ref.read(databaseProvider),
+        notification: ref.read(notificationServiceProvider),
+        globalReminderTime: prefs.routineReminderTime,
+        intervalHours: hours,
+        alertMode: prefs.alertMode,
+      );
+    }
+  }
+
   String _alertModeLabel(ReminderAlertMode mode) {
     switch (mode) {
-      case ReminderAlertMode.ring:
-        return 'Ring';
-      case ReminderAlertMode.ringAndVibration:
-        return 'Ring + Vibration';
-      case ReminderAlertMode.vibration:
-        return 'Vibration';
-      case ReminderAlertMode.silent:
-        return 'Silent';
+      case ReminderAlertMode.ringAndVibration: return 'Ring & Vibrate';
+      case ReminderAlertMode.ring: return 'Ring only';
+      case ReminderAlertMode.vibration: return 'Vibration only';
+      case ReminderAlertMode.silent: return 'Silent';
     }
   }
 
   String _incompleteIntervalLabel(int hours) {
-    return hours == 1 ? 'Every 1 hour' : 'Every $hours hours';
-  }
-
-  Future<void> _pickDailyReminderTime(BuildContext context) async {
-    final prefsState = ref.read(notificationPreferencesProvider);
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: prefsState.routineReminderTime,
-    );
-    if (picked == null) return;
-
-    await ref.read(notificationPreferencesProvider.notifier).setRoutineReminderTime(picked);
-    await _rescheduleRoutineReminders();
-    if (!mounted) return;
-    ScaffoldMessenger.of(this.context).showSnackBar(
-      const SnackBar(content: Text('Daily reminder time updated')),
-    );
-  }
-
-  Future<void> _pickAlertMode(BuildContext context) async {
-    final current = ref.read(notificationPreferencesProvider).alertMode;
-    final selected = await showModalBottomSheet<ReminderAlertMode>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: ReminderAlertMode.values.map((mode) {
-                return ListTile(
-                  leading: Icon(
-                    current == mode ? Icons.radio_button_checked : Icons.radio_button_off,
-                    color: current == mode ? AppColors.primary : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  title: Text(_alertModeLabel(mode)),
-                  onTap: () => Navigator.pop(ctx, mode),
-                );
-              }).toList(),
-            ),
-          ),
-        );
-      },
-    );
-
-    if (selected == null || selected == current) return;
-
-    await ref.read(notificationPreferencesProvider.notifier).setAlertMode(selected);
-    await _rescheduleRoutineReminders();
-    if (!mounted) return;
-    ScaffoldMessenger.of(this.context).showSnackBar(
-      const SnackBar(content: Text('Reminder type updated')),
-    );
-  }
-
-  Future<void> _pickIncompleteReminderInterval(BuildContext context) async {
-    final current =
-        ref.read(notificationPreferencesProvider).incompleteReminderIntervalHours;
-    const options = <int>[1, 2, 3, 4, 6, 8, 12];
-
-    final selected = await showModalBottomSheet<int>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: options.map((hours) {
-                final isSelected = current == hours;
-                return ListTile(
-                  leading: Icon(
-                    isSelected
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_off,
-                    color: isSelected
-                        ? AppColors.primary
-                        : theme.colorScheme.onSurfaceVariant,
-                  ),
-                  title: Text(_incompleteIntervalLabel(hours)),
-                  onTap: () => Navigator.pop(ctx, hours),
-                );
-              }).toList(),
-            ),
-          ),
-        );
-      },
-    );
-
-    if (selected == null || selected == current) return;
-
-    await ref
-        .read(notificationPreferencesProvider.notifier)
-        .setIncompleteReminderIntervalHours(selected);
-    await _rescheduleRoutineReminders();
-    if (!mounted) return;
-    ScaffoldMessenger.of(this.context).showSnackBar(
-      SnackBar(content: Text('Incomplete reminder interval set to ${_incompleteIntervalLabel(selected)}')),
-    );
-  }
-
-  Future<void> _rescheduleRoutineReminders() async {
-    final db = ref.read(databaseProvider);
-    final notification = ref.read(notificationServiceProvider);
-    final prefs = ref.read(notificationPreferencesProvider);
-    final routines = await db.getAllRoutines();
-    final birthdays = await db.getAllBirthdays();
-    final todos = await db.watchAllTodos().first;
-    final habits = await db.watchAllHabits().first;
-
-    await notification.cancelGlobalDailyReminder();
-    await notification.cancelDailyTaskDigestReminders();
-
-    for (final routine in routines) {
-      await notification.cancelRoutineReminders(routine.id);
-      final days = routine.days
-          .split(',')
-          .map((d) => int.tryParse(d))
-          .whereType<int>()
-          .toList();
-      if (days.isEmpty) continue;
-
-      final reminderTimes = <TimeOfDay>[];
-      if (routine.reminderTime != null && routine.reminderTime!.trim().isNotEmpty) {
-        for (final token in routine.reminderTime!.split(',')) {
-          final parts = token.trim().split(':');
-          if (parts.length != 2) continue;
-          final hour = int.tryParse(parts[0]);
-          final minute = int.tryParse(parts[1]);
-          if (hour == null || minute == null) continue;
-          if (hour < 0 || hour > 23 || minute < 0 || minute > 59) continue;
-          reminderTimes.add(TimeOfDay(hour: hour, minute: minute));
-        }
-      }
-
-      if (reminderTimes.isEmpty) {
-        reminderTimes.add(prefs.routineReminderTime);
-      }
-
-      await notification.scheduleRoutineReminders(
-        routineId: routine.id,
-        title: 'Routine: ${routine.title}',
-        body: 'Time to start your morning routine!',
-        daysOfWeek: days,
-        reminderTimes: reminderTimes,
-        alertMode: prefs.alertMode,
-      );
-    }
-
-    await notification.rescheduleAllBirthdayReminders(
-      birthdays: birthdays,
-      alertMode: prefs.alertMode,
-    );
-
-    await notification.rescheduleAllTodoReminders(
-      todos: todos,
-      alertMode: prefs.alertMode,
-    );
-
-    await notification.rescheduleAllHabitReminders(
-      habits: habits,
-      alertMode: prefs.alertMode,
-    );
-
-    await IncompleteReminderScheduler.refresh(
-      db: db,
-      notification: notification,
-      globalReminderTime: prefs.routineReminderTime,
-      intervalHours: prefs.incompleteReminderIntervalHours,
-      alertMode: prefs.alertMode,
-    );
+    if (hours == 0) return 'Disabled';
+    if (hours == 1) return 'Every 1 hour';
+    return 'Every $hours hours';
   }
 
   Future<void> _runManualBackup() async {
-    if (_isBackupBusy) return;
     setState(() => _isBackupBusy = true);
     try {
-      final backupService = AppBackupService(ref.read(databaseProvider));
-      final result = await backupService.createBackupFile();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message)),
-      );
-
-      if (result.success &&
-          !result.cancelled &&
-          !kIsWeb &&
-          result.filePath != null &&
-          _canShowBackupActions(result.filePath!)) {
-        await _showBackupActions(result.filePath!);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isBackupBusy = false);
-      }
-    }
-  }
-
-  Future<void> _showBackupActions(String filePath) async {
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        return Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.insert_drive_file_outlined, color: AppColors.primary),
-                  title: const Text('Open Backup File'),
-                  subtitle: Text(filePath, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  onTap: () async {
-                    Navigator.of(ctx).pop();
-                    await _openPath(filePath, errorPrefix: 'Open file failed');
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.folder_open_rounded, color: AppColors.info),
-                  title: const Text('Open Backup Folder'),
-                  subtitle: Text(p.dirname(filePath), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  onTap: () async {
-                    Navigator.of(ctx).pop();
-                    await _openPath(p.dirname(filePath), errorPrefix: 'Open folder failed');
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.share_outlined, color: AppColors.success),
-                  title: const Text('Share Backup File'),
-                  onTap: () async {
-                    Navigator.of(ctx).pop();
-                    try {
-                      await Share.shareXFiles([XFile(filePath)], text: 'TOD backup file');
-                    } catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Share failed: $e')),
-                      );
-                    }
-                  },
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  bool _canShowBackupActions(String filePath) {
-    final normalized = filePath.trim().toLowerCase();
-    return !normalized.startsWith('content://') &&
-        !normalized.startsWith('document://');
-  }
-
-  Future<void> _openPath(String targetPath, {required String errorPrefix}) async {
-    try {
-      final result = await OpenFilex.open(targetPath);
-      if (result.type != ResultType.done) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$errorPrefix: ${result.message}')),
-        );
+      final db = ref.read(databaseProvider);
+      final service = AppBackupService(db);
+      final result = await service.createBackupFile();
+      if (!result.success && !result.cancelled) throw Exception(result.message);
+      if (result.success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.message)));
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$errorPrefix: $e')),
-      );
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Backup failed: $e')));
+    } finally {
+      if (mounted) setState(() => _isBackupBusy = false);
     }
   }
 
   Future<void> _confirmRestore() async {
-    final shouldRestore = await showDialog<bool>(
+    final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Restore Backup?'),
-        content: const Text(
-          'This will replace your current app data, settings, and PIN with backup content. This action cannot be undone.',
-        ),
+        content: const Text('This will replace all current data with data from the backup file. Continue?'),
         actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
+            onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Restore', style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
     );
+    if (confirmed != true) return;
 
-    if (shouldRestore != true) return;
-    await _runRestoreBackup();
-  }
-
-  Future<void> _runRestoreBackup() async {
-    if (_isBackupBusy) return;
     setState(() => _isBackupBusy = true);
     try {
-      final backupService = AppBackupService(ref.read(databaseProvider));
-      final result = await backupService.restoreFromFile();
-
-      if (result.success) {
-        ref.invalidate(databaseProvider);
-        ref.invalidate(userProfileProvider);
-        ref.invalidate(themeModeProvider);
-        ref.invalidate(notificationPreferencesProvider);
-        ref.invalidate(authProvider);
-
-        await _waitForNotificationPrefsReady();
-        await _rescheduleRoutineReminders();
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.message)),
-      );
+      final service = AppBackupService(ref.read(databaseProvider));
+      final result = await service.restoreFromFile();
+      if (result.cancelled) return;
+      if (!result.success) throw Exception(result.message);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Restore complete!')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Restore failed: $e')));
     } finally {
-      if (mounted) {
-        setState(() => _isBackupBusy = false);
-      }
+      if (mounted) setState(() => _isBackupBusy = false);
     }
-  }
-
-  Future<void> _waitForNotificationPrefsReady() async {
-    for (int i = 0; i < 30; i++) {
-      final state = ref.read(notificationPreferencesProvider);
-      if (!state.isLoading) return;
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    }
-  }
-}
-
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  const _SectionTitle({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: AppTypography.labelLarge.copyWith(
-        color: Theme.of(context).colorScheme.onSurfaceVariant,
-        letterSpacing: 0.5,
-      ),
-    );
-  }
-}
-
-class _SettingsTile extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String title;
-  final String? subtitle;
-  final Widget? trailing;
-  final VoidCallback? onTap;
-
-  const _SettingsTile({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    this.subtitle,
-    this.trailing,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: AppDimensions.md),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-              ),
-              child: Icon(icon, size: 20, color: iconColor),
-            ),
-            const SizedBox(width: AppDimensions.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: AppTypography.bodyLarge.copyWith(color: theme.colorScheme.onSurface)),
-                  if (subtitle != null)
-                    Text(subtitle!, style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                ],
-              ),
-            ),
-            if (trailing != null) trailing!,
-          ],
-        ),
-      ),
-    );
   }
 }

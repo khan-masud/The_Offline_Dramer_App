@@ -4,6 +4,29 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+class WeatherApiKeyNotifier extends StateNotifier<AsyncValue<String>> {
+  WeatherApiKeyNotifier() : super(const AsyncValue.loading()) {
+    _init();
+  }
+
+  Future<void> _init() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedKey = prefs.getString('weather_api_key') ?? '';
+    state = AsyncValue.data(savedKey);
+  }
+
+  Future<void> saveKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('weather_api_key', key);
+    state = AsyncValue.data(key);
+  }
+}
+
+final weatherApiKeyProvider = StateNotifierProvider<WeatherApiKeyNotifier, AsyncValue<String>>((ref) {
+  return WeatherApiKeyNotifier();
+});
 
 class HourlyWeather {
   final DateTime time;
@@ -20,11 +43,7 @@ class HourlyWeather {
     required this.conditionText,
   });
 
-  String get icon => _getIcon(
-    weatherCode,
-    isDay: isDay,
-    conditionText: conditionText,
-  );
+  String get icon => getWeatherIcon(weatherCode, isDay);
 }
 
 class WeatherInfo {
@@ -45,28 +64,39 @@ class WeatherInfo {
   });
 }
 
-String _getIcon(
-  int code, {
-  required bool isDay,
-  required String conditionText,
-}) {
-  final text = conditionText.toLowerCase();
-
-  if (text.contains('thunder')) return '⛈️';
-  if (text.contains('snow') || text.contains('sleet') || text.contains('blizzard')) return '❄️';
-  if (text.contains('rain') || text.contains('drizzle') || text.contains('shower')) return '🌧️';
-  if (text.contains('fog') || text.contains('mist') || text.contains('haze')) return '🌫️';
-
-  // WeatherAPI standardized codes
-  if (code == 1000) return isDay ? '☀️' : '🌙'; // Sunny/Clear
-  if (code == 1003) return isDay ? '⛅' : '☁️'; // Partly cloudy
-  if (code == 1006) return '☁️'; // Cloudy
-  if (code == 1009) return '☁️'; // Overcast
-  if (code == 1030) return '🌫️'; // Mist
-  if (code == 1063 || code == 1180 || code == 1183) return '🌦️'; // Patchy rain
-  if (code >= 1186 && code <= 1201) return '🌧️'; // Rain
-  if (code >= 1087 && code <= 1282) return '⛈️'; // Thunder/heavy
-  if (code >= 1066 && code <= 1114) return '❄️'; // Snow
+// WeatherAPI standardized codes
+String getWeatherIcon(int code, bool isDay) {
+  final text = code.toString().toLowerCase();
+  
+  if (text.contains('1000')) return isDay ? '☀️' : '🌙'; // Sunny/Clear
+  if (text.contains('1003') || text.contains('1006') || text.contains('1009')) return isDay ? '🌤️' : '☁️'; // Clouds
+  if (text.contains('1030') || text.contains('1135') || text.contains('1147')) return '🌫️'; // Mist/Fog
+  
+  // Rain
+  if (text.contains('1063') || text.contains('1150') || text.contains('1153') || 
+      text.contains('1180') || text.contains('1183') || text.contains('1186') || 
+      text.contains('1189') || text.contains('1192') || text.contains('1195') || 
+      text.contains('1240') || text.contains('1243') || text.contains('1246')) {
+    return '🌧️';
+  }
+  
+  // Snow/Sleet/Ice
+  if (text.contains('1066') || text.contains('1069') || text.contains('1072') || 
+      text.contains('1114') || text.contains('1117') || text.contains('1168') || 
+      text.contains('1171') || text.contains('1198') || text.contains('1201') || 
+      text.contains('1204') || text.contains('1207') || text.contains('1210') || 
+      text.contains('1213') || text.contains('1216') || text.contains('1219') || 
+      text.contains('1222') || text.contains('1225') || text.contains('1237') || 
+      text.contains('1249') || text.contains('1252') || text.contains('1255') || 
+      text.contains('1258') || text.contains('1261') || text.contains('1264')) {
+    return '❄️';
+  }
+  
+  // Thunder
+  if (text.contains('1087') || text.contains('1273') || text.contains('1276') || 
+      text.contains('1279') || text.contains('1282')) {
+    return '⛈️';
+  }
 
   if (text.contains('cloud')) return '☁️';
   if (text.contains('clear') || text.contains('sunny')) return isDay ? '☀️' : '🌙';
@@ -103,8 +133,6 @@ final weatherProvider = FutureProvider<WeatherInfo?>((ref) async {
       }
     }
 
-    // Default to Dhaka if we can't get any location, or maybe return null so it doesn't show randomly?
-    // Returning null if coordinates not found will hide the weather widget or show error.
     if (lat == 0.0 && lon == 0.0) {
       return null;
     }
@@ -136,11 +164,15 @@ final weatherProvider = FutureProvider<WeatherInfo?>((ref) async {
         }
       }
     } catch (e) {
-      // Fallback if Geocoding fails (e.g. some Emulators)
       locationStr = 'Lat: ${lat.toStringAsFixed(2)}, Lon: ${lon.toStringAsFixed(2)}';
     }
 
-    final apiKey = dotenv.env['WEATHER_API_KEY'] ?? '';
+    final apiKeyAsync = ref.watch(weatherApiKeyProvider);
+    final customApiKey = apiKeyAsync.value ?? '';
+    final apiKey = customApiKey.isNotEmpty ? customApiKey : (dotenv.env['WEATHER_API_KEY'] ?? '');
+    
+    if (apiKey.isEmpty) return null;
+
     final weatherUrl =
         'https://api.weatherapi.com/v1/forecast.json?key=$apiKey&q=$lat,$lon&days=2&aqi=no&alerts=no';
     final weatherRes = await http.get(Uri.parse(weatherUrl));
