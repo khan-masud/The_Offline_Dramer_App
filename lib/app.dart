@@ -25,7 +25,6 @@ import 'core/theme/app_dimensions.dart';
 import 'main.dart';
 import 'core/services/share_intent_service.dart';
 import 'features/links/data/links_provider.dart';
-import 'features/links/presentation/screens/links_screen.dart' show fetchUrlTitle;
 
 class TODApp extends ConsumerStatefulWidget {
   const TODApp({super.key});

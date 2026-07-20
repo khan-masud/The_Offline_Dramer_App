@@ -221,7 +221,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   icon: Icons.tag_rounded,
                   iconColor: AppColors.teal,
                   title: 'Version',
-                  subtitle: '1.0.0 (beta)',
+                  subtitle: '1.1.0',
                 ),
                 _divider(theme),
                 _tile(

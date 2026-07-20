@@ -108,7 +108,7 @@ class NotificationService {
         if (!alreadyShown) {
           await _notificationsPlugin.show(
             id: _welcomeNotificationId,
-            title: 'Welcome to TOD',
+            title: 'Thanks for downloading Me++',
             body: 'Notifications are ready. You will only see this once.',
             notificationDetails: const NotificationDetails(
               android: AndroidNotificationDetails(
@@ -137,7 +137,6 @@ class NotificationService {
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
-    // Keep only pending-list follow-up notifications.
     await cancelReminder(id);
   }
 
@@ -145,7 +144,7 @@ class NotificationService {
     required int routineId,
     required String title,
     required String body,
-    required List<int> daysOfWeek, // 1 to 7
+    required List<int> daysOfWeek,
     required int hour,
     required int minute,
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
@@ -172,7 +171,6 @@ class NotificationService {
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
-    // Keep only pending-list follow-up notifications.
     await cancelRoutineReminders(routineId);
   }
 
@@ -181,7 +179,6 @@ class NotificationService {
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
-    // Keep only pending-list follow-up notifications.
     await cancelGlobalDailyReminder();
   }
 
@@ -202,7 +199,6 @@ class NotificationService {
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
-    // Keep only pending-list follow-up notifications.
     await cancelDailyTaskDigestReminders();
   }
 
@@ -256,7 +252,7 @@ class NotificationService {
 
   String _sanitizeNotificationName(String raw) {
     final normalized = raw.trim();
-    if (normalized.isEmpty) return 'Dreamer';
+    if (normalized.isEmpty) return 'Me++';
     return normalized;
   }
 
@@ -414,15 +410,13 @@ class NotificationService {
     final visible = normalizedNames.take(maxVisibleItems).toList();
     final hiddenCount = normalizedNames.length - visible.length;
 
-    final buffer = StringBuffer('You have pending tasks:\n');
+    final buffer = StringBuffer('Your today\'s pending tasks:\n');
     for (int i = 0; i < visible.length; i++) {
       buffer.writeln('${i + 1}. ${visible[i]}');
     }
     if (hiddenCount > 0) {
       buffer.writeln('+ $hiddenCount more task(s)...');
     }
-    buffer.write('\nPlease complete them in time');
-
     return buffer.toString().trimRight();
   }
 
@@ -470,8 +464,35 @@ class NotificationService {
       if (!scheduled.isAfter(now)) {
         final isDayBeforeToday = dayBefore.month == now.month && dayBefore.day == now.day && dayBefore.year == now.year;
         if (isDayBeforeToday) {
-          scheduled = now.add(const Duration(minutes: 5));
-          useRepeat = false;
+          // Show immediately instead of scheduling 5 min later (avoids infinite loop)
+          final prefs = await SharedPreferences.getInstance();
+          final catchUpKey = 'birthday_daybefore_catchup_${birthdayId}_${now.year}_${now.month}_${now.day}';
+          final alreadyShown = prefs.getBool(catchUpKey) ?? false;
+          if (!alreadyShown) {
+            await _notificationsPlugin.show(
+              id: _birthdayNotificationId(birthdayId, 1),
+              title: '🎂 Birthday Tomorrow!',
+              body: '$personName\'s birthday is tomorrow.',
+              notificationDetails: _buildDetails(
+                channelBaseId: 'birthday_reminders',
+                channelBaseName: 'Birthday Reminders',
+                channelDescription: 'Reminders for saved birthdays',
+                alertMode: alertMode,
+                expandedText: '$personName\'s birthday is tomorrow.',
+              ),
+            );
+            await prefs.setBool(catchUpKey, true);
+          }
+
+          scheduled = tz.TZDateTime(
+            tz.local,
+            dayBefore.year + 1,
+            dayBefore.month,
+            dayBefore.day,
+            hour,
+            minute,
+          );
+          useRepeat = true;
         } else {
           scheduled = tz.TZDateTime(
             tz.local,
@@ -487,14 +508,14 @@ class NotificationService {
       await _notificationsPlugin.zonedSchedule(
         id: _birthdayNotificationId(birthdayId, 1),
         title: '🎂 Birthday Tomorrow!',
-        body: '$personName has a birthday tomorrow.',
+        body: '$personName\'s birthday is tomorrow.',
         scheduledDate: scheduled,
         notificationDetails: _buildDetails(
           channelBaseId: 'birthday_reminders',
           channelBaseName: 'Birthday Reminders',
           channelDescription: 'Reminders for saved birthdays',
           alertMode: alertMode,
-          expandedText: '$personName has a birthday tomorrow.',
+          expandedText: '$personName\'s birthday is tomorrow.',
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
         matchDateTimeComponents: useRepeat ? DateTimeComponents.dateAndTime : null,
@@ -544,20 +565,25 @@ class NotificationService {
       );
 
       if (scheduleOneOffToday) {
-        await _notificationsPlugin.zonedSchedule(
-          id: _birthdayNotificationId(birthdayId, 3),
-          title: '🎂 Happy Birthday!',
-          body: 'Today is $personName\'s birthday!',
-          scheduledDate: now.add(const Duration(minutes: 5)),
-          notificationDetails: _buildDetails(
-            channelBaseId: 'birthday_reminders',
-            channelBaseName: 'Birthday Reminders',
-            channelDescription: 'Reminders for saved birthdays',
-            alertMode: alertMode,
-            expandedText: 'Today is $personName\'s birthday!',
-          ),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        );
+        // Show immediately instead of scheduling 5 min later (avoids infinite loop)
+        final prefs = await SharedPreferences.getInstance();
+        final catchUpKey = 'birthday_onday_catchup_${birthdayId}_${now.year}_${now.month}_${now.day}';
+        final alreadyShown = prefs.getBool(catchUpKey) ?? false;
+        if (!alreadyShown) {
+          await _notificationsPlugin.show(
+            id: _birthdayNotificationId(birthdayId, 3),
+            title: '🎂 Happy Birthday!',
+            body: 'Today is $personName\'s birthday!',
+            notificationDetails: _buildDetails(
+              channelBaseId: 'birthday_reminders',
+              channelBaseName: 'Birthday Reminders',
+              channelDescription: 'Reminders for saved birthdays',
+              alertMode: alertMode,
+              expandedText: 'Today is $personName\'s birthday!',
+            ),
+          );
+          await prefs.setBool(catchUpKey, true);
+        }
       }
     }
   }
@@ -653,15 +679,16 @@ class NotificationService {
   }
 
   String _timeGreetingByHour(int hour) {
-    if (hour < 12) return 'Good Morning';
+    if (hour < 10) return 'Good Morning';
     if (hour < 14) return 'Good Noon';
-    if (hour < 18) return 'Good Afternoon';
+    if (hour < 17) return 'Good Afternoon';
+    if (hour < 19) return 'Good Evening';
     return 'Good Night';
   }
 
   String _buildPendingTaskNoticeBody(String taskName) {
     final normalizedTask = taskName.trim().isEmpty ? 'Task' : taskName.trim();
-    return 'You have a pending task: $normalizedTask\n\nPlease complete it in time';
+    return 'You have a pending task: $normalizedTask\n';
   }
 
   String _deriveTaskName({

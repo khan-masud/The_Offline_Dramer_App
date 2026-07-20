@@ -1300,7 +1300,7 @@ class _AddEditDebtSheetState extends ConsumerState<_AddEditDebtSheet> {
                     Switch(
                       value: _linkToWallet,
                       onChanged: (v) => setState(() => _linkToWallet = v),
-                      activeColor: AppColors.primary,
+                      activeThumbColor: AppColors.primary,
                     ),
                   ],
                 ),

@@ -93,7 +93,7 @@ class _MainShellState extends ConsumerState<MainShell> {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _NavItem(
-                    icon: Icons.dashboard_rounded,
+                    icon: Icons.home_rounded,
                     label: 'Home',
                     isActive: _currentIndex == 0,
                     onTap: () => _switchTab(0),

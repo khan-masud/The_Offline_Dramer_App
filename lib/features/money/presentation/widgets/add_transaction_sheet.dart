@@ -398,7 +398,7 @@ class _AddTransactionSheetState extends ConsumerState<AddTransactionSheet> {
             if (_isRecurring) ...[
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                value: _recurringPattern,
+                initialValue: _recurringPattern,
                 items: _recurringOptions.map((e) => DropdownMenuItem(value: e, child: Text(e[0].toUpperCase() + e.substring(1)))).toList(),
                 onChanged: (v) { if (v != null) setState(() => _recurringPattern = v); },
                 decoration: const InputDecoration(

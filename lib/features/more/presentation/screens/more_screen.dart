@@ -40,7 +40,6 @@ class MoreScreen extends StatelessWidget {
                     _ModuleCard(icon: Icons.cake_outlined, label: 'Birthdays', color: AppColors.pink, route: '/birthdays'),
                     _ModuleCard(icon: Icons.contact_phone_outlined, label: 'Contacts', color: AppColors.info, route: '/contacts'),
                     _ModuleCard(icon: Icons.handshake_outlined, label: 'Debts', color: AppColors.orange, route: '/debts'),
-                    _ModuleCard(icon: Icons.cloud_upload_outlined, label: 'Backup', color: AppColors.primary, route: '/settings'),
                     _ModuleCard(icon: Icons.settings_outlined, label: 'Settings', color: AppColors.lightTextSecondary, route: '/settings'),
                   ].asMap().entries.map((e) {
                     return e.value.animate().fadeIn(delay: (100 * e.key).ms, duration: 400.ms).scale(

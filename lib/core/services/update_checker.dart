@@ -6,7 +6,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
 
 class UpdateChecker {
-  static const String currentVersion = '1.0.0';
+  static const String currentVersion = '1.1.0';
   static const String githubRepo = 'khan-masud/me-plus-plus';
 
   static Future<void> checkForUpdates(BuildContext context) async {
@@ -88,7 +88,7 @@ class UpdateChecker {
                 width: double.maxFinite,
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceVariant.withValues(alpha: 0.3),
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: SingleChildScrollView(
