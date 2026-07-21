@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "28657135326",
+    "project_id": "me-plus-plus",
+    "storage_bucket": "me-plus-plus.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:28657135326:android:1bbf6eee6e966643a61c4f",
+        "android_client_info": {
+          "package_name": "com.tod.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCttGafkVqCBHgTanBNB4QdcCgPzbCdj00"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'core/widgets/main_shell.dart';
+import 'core/services/analytics_service.dart';
 import 'features/auth/presentation/screens/lock_screen.dart';
 import 'features/settings/presentation/screens/settings_screen.dart';
 import 'features/notes/presentation/screens/notes_screen.dart';
@@ -25,6 +26,36 @@ import 'core/theme/app_dimensions.dart';
 import 'main.dart';
 import 'core/services/share_intent_service.dart';
 import 'features/links/data/links_provider.dart';
+
+/// Navigator observer that logs screen views to Firebase Analytics.
+class _AnalyticsNavigatorObserver extends NavigatorObserver {
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPush(route, previousRoute);
+    _logRoute(route);
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    super.didReplace(newRoute: newRoute, oldRoute: oldRoute);
+    if (newRoute != null) _logRoute(newRoute);
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    super.didPop(route, previousRoute);
+    if (previousRoute != null) _logRoute(previousRoute);
+  }
+
+  void _logRoute(Route<dynamic> route) {
+    final name = route.settings.name;
+    if (name != null && name.isNotEmpty) {
+      AnalyticsService().logScreenView(name, screenClass: 'Route');
+    }
+  }
+}
+
+final _navigatorObserver = _AnalyticsNavigatorObserver();
 
 class TODApp extends ConsumerStatefulWidget {
   const TODApp({super.key});
@@ -70,6 +101,7 @@ class _TODAppState extends ConsumerState<TODApp> {
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: themeMode,
+      navigatorObservers: [_navigatorObserver],
       home: const _AuthGate(),
       routes: {
         '/settings': (context) => const SettingsScreen(),

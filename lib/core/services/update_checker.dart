@@ -74,7 +74,7 @@ class UpdateChecker {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'A new version ($version) of Me++ is available. Please update for the latest features and bug fixes.',
+                'A new version ($version) of Me++ is available. Update your app for the latest features and bug fixes. Please make sure to backup your data first!',
                 style: AppTypography.bodyMedium,
               ),
               const SizedBox(height: 14),
