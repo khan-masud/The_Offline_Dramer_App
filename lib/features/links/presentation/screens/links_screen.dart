@@ -281,17 +281,28 @@ class LinksScreen extends ConsumerWidget {
     );
   }
 
+  static const _allowedSchemes = {'https', 'http', 'mailto', 'tel'};
+
   Future<void> _openLink(String urlString) async {
     var normalized = urlString.trim();
     if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
       normalized = 'https://$normalized';
     }
-    final url = Uri.parse(normalized);
+    final uri = Uri.parse(normalized);
+
+    // Validate URL scheme — only allow safe schemes
+    if (uri.scheme.isEmpty || !_allowedSchemes.contains(uri.scheme)) {
+      if (uri.scheme == 'javascript' || uri.scheme == 'file' || uri.scheme == 'intent') {
+        debugPrint('Blocked unsafe URL scheme: ${uri.scheme}');
+        return;
+      }
+    }
+
     try {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
       try {
-        await launchUrl(url, mode: LaunchMode.inAppBrowserView);
+        await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
       } catch (_) {}
     }
   }

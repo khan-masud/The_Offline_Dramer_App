@@ -33,6 +33,8 @@ class _LockScreenState extends ConsumerState<LockScreen> with SingleTickerProvid
   }
 
   void _onNumberTap(int number) {
+    final authState = ref.read(authProvider);
+    if (authState.isLocked) return;
     if (_pin.length >= 4) return;
     HapticFeedback.lightImpact();
     setState(() {
@@ -52,7 +54,8 @@ class _LockScreenState extends ConsumerState<LockScreen> with SingleTickerProvid
   }
 
   Future<void> _verifyPin() async {
-    final success = await ref.read(authProvider.notifier).verifyPin(_pin);
+    final notifier = ref.read(authProvider.notifier);
+    final success = await notifier.verifyPin(_pin);
     if (success) {
       widget.onUnlocked();
     } else {
@@ -65,8 +68,21 @@ class _LockScreenState extends ConsumerState<LockScreen> with SingleTickerProvid
     }
   }
 
+  String _formatLockDuration(Duration d) {
+    if (d.inMinutes >= 1) {
+      final m = d.inMinutes;
+      final s = d.inSeconds % 60;
+      return s > 0 ? '${m}m ${s}s' : '${m}m';
+    }
+    return '${d.inSeconds}s';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final authState = ref.watch(authProvider);
+    final isLocked = authState.isLocked;
+    final remainingAttempts = authState.remainingAttempts;
+
     return Scaffold(
       body: Container(
         width: double.infinity,
@@ -101,13 +117,11 @@ class _LockScreenState extends ConsumerState<LockScreen> with SingleTickerProvid
                 style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 3),
               ).animate().fadeIn(delay: 200.ms),
               const SizedBox(height: 8),
-              Text(
-                _isError ? 'Incorrect PIN. Try again.' : 'Enter your PIN to continue',
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  color: _isError ? AppColors.error : Colors.white.withValues(alpha: 0.5),
-                ),
-              ).animate().fadeIn(delay: 300.ms),
+              // Status message
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child: _buildStatusMessage(isLocked, authState, remainingAttempts),
+              ),
               const SizedBox(height: 40),
               // PIN dots
               AnimatedBuilder(
@@ -131,11 +145,13 @@ class _LockScreenState extends ConsumerState<LockScreen> with SingleTickerProvid
                         shape: BoxShape.circle,
                         color: _isError
                             ? AppColors.error
-                            : isActive
-                                ? AppColors.primary
-                                : Colors.white.withValues(alpha: 0.15),
+                            : isLocked
+                                ? Colors.white.withValues(alpha: 0.1)
+                                : isActive
+                                    ? AppColors.primary
+                                    : Colors.white.withValues(alpha: 0.15),
                         border: !isActive && !_isError
-                            ? Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1.5)
+                            ? Border.all(color: isLocked ? Colors.white.withValues(alpha: 0.05) : Colors.white.withValues(alpha: 0.3), width: 1.5)
                             : null,
                         boxShadow: isActive
                             ? [BoxShadow(color: (_isError ? AppColors.error : AppColors.primary).withValues(alpha: 0.4), blurRadius: 8)]
@@ -145,6 +161,16 @@ class _LockScreenState extends ConsumerState<LockScreen> with SingleTickerProvid
                   }),
                 ),
               ).animate().fadeIn(delay: 400.ms),
+              const SizedBox(height: 16),
+              // Remaining attempts indicator
+              if (!isLocked && authState.attemptCount > 0)
+                Text(
+                  '$remainingAttempts attempt${remainingAttempts == 1 ? '' : 's'} remaining',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: remainingAttempts <= 2 ? AppColors.error.withValues(alpha: 0.8) : Colors.white.withValues(alpha: 0.4),
+                  ),
+                ),
               const Spacer(),
               // Number Pad
               Padding(
@@ -154,7 +180,7 @@ class _LockScreenState extends ConsumerState<LockScreen> with SingleTickerProvid
                     for (var row in [[1, 2, 3], [4, 5, 6], [7, 8, 9]]) ...[
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: row.map((n) => _buildKey(n)).toList(),
+                        children: row.map((n) => _buildKey(n, isLocked)).toList(),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -162,14 +188,20 @@ class _LockScreenState extends ConsumerState<LockScreen> with SingleTickerProvid
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         const SizedBox(width: 72, height: 72),
-                        _buildKey(0),
+                        _buildKey(0, isLocked),
                         SizedBox(
                           width: 72,
                           height: 72,
                           child: GestureDetector(
-                            onTap: _onDelete,
+                            onTap: isLocked ? null : _onDelete,
                             child: Center(
-                              child: Icon(Icons.backspace_outlined, color: Colors.white.withValues(alpha: 0.7), size: 24),
+                              child: Icon(
+                                Icons.backspace_outlined,
+                                color: isLocked
+                                    ? Colors.white.withValues(alpha: 0.15)
+                                    : Colors.white.withValues(alpha: 0.7),
+                                size: 24,
+                              ),
                             ),
                           ),
                         ),
@@ -187,21 +219,78 @@ class _LockScreenState extends ConsumerState<LockScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildKey(int number) {
+  Widget _buildStatusMessage(bool isLocked, AuthState authState, int remainingAttempts) {
+    if (isLocked) {
+      final lockedUntil = authState.lockUntil!;
+      final remaining = lockedUntil.difference(DateTime.now());
+      final formatted = _formatLockDuration(remaining);
+      return TweenAnimationBuilder<double>(
+        key: const ValueKey('locked'),
+        tween: Tween(begin: 0, end: 1),
+        duration: const Duration(seconds: 1),
+        builder: (context, value, _) {
+          return Opacity(
+            opacity: value,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_clock, color: AppColors.error.withValues(alpha: 0.8), size: 20),
+                const SizedBox(height: 6),
+                Text(
+                  'Too many attempts',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: AppColors.error,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Try again in $formatted',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.error.withValues(alpha: 0.7),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    }
+    return Text(
+      _isError ? 'Incorrect PIN. Try again.' : 'Enter your PIN to continue',
+      style: GoogleFonts.inter(
+        fontSize: 14,
+        color: _isError ? AppColors.error : Colors.white.withValues(alpha: 0.5),
+      ),
+    ).animate().fadeIn(delay: 300.ms);
+  }
+
+  Widget _buildKey(int number, bool isLocked) {
     return GestureDetector(
-      onTap: () => _onNumberTap(number),
+      onTap: isLocked ? null : () => _onNumberTap(number),
       child: Container(
         width: 72,
         height: 72,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: 0.08),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1),
+          color: isLocked ? Colors.white.withValues(alpha: 0.03) : Colors.white.withValues(alpha: 0.08),
+          border: Border.all(
+            color: isLocked
+                ? Colors.white.withValues(alpha: 0.04)
+                : Colors.white.withValues(alpha: 0.12),
+            width: 1,
+          ),
         ),
         child: Center(
           child: Text(
             number.toString(),
-            style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.w500, color: Colors.white),
+            style: GoogleFonts.inter(
+              fontSize: 28,
+              fontWeight: FontWeight.w500,
+              color: isLocked ? Colors.white.withValues(alpha: 0.15) : Colors.white,
+            ),
           ),
         ),
       ),

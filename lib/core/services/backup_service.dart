@@ -157,6 +157,9 @@ class AppBackupService {
     }
 
     final secureDump = await _secureStorage.readAll();
+    // Remove authentication credentials from backup for security
+    secureDump.remove('user_pin_hash');
+    secureDump.remove('user_pin_salt');
     final appFilesDump = await collectAppFilesForBackup();
 
     return {

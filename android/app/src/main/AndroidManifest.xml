@@ -14,7 +14,9 @@
     <application
         android:label="Me++"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <!-- Required by image_cropper (uCrop) on Android -->
         <activity
             android:name="com.yalantis.ucrop.UCropActivity"

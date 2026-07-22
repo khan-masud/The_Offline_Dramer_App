@@ -1,16 +1,20 @@
 ﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_typography.dart';
 
 class UpdateChecker {
-  static const String currentVersion = '1.2.0';
   static const String githubRepo = 'khan-masud/me-plus-plus';
 
   static Future<void> checkForUpdates(BuildContext context) async {
     try {
+      // Get current app version dynamically from package info
+      final packageInfo = await PackageInfo.fromPlatform();
+      final currentVersion = packageInfo.version;
+
       final url = Uri.parse('https://api.github.com/repos/$githubRepo/releases/latest');
       final response = await http.get(url).timeout(const Duration(seconds: 8));
       

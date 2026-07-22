@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -29,6 +30,20 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _isSavingProfile = false;
   bool _isBackupBusy = false;
+  String _appVersion = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() => _appVersion = info.version);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -221,7 +236,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   icon: Icons.tag_rounded,
                   iconColor: AppColors.teal,
                   title: 'Version',
-                  subtitle: '1.2.0',
+                  subtitle: _appVersion.isNotEmpty ? _appVersion : '...',
                 ),
                 _divider(theme),
                 _tile(

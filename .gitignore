@@ -59,6 +59,9 @@ Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 
+# Android signing
+android/key.properties
+
 # macOS related
 .AppleDouble
 .LSOverride
