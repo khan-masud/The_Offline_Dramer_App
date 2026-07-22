@@ -65,7 +65,7 @@ jobs:
 
       - name: Print SHA-1 fingerprint (for Firebase API Key restriction)
         run: |
-          keytool -list -v -keystore android/app/upload-keystore.jks -alias upload -storepass "${{ secrets.KEYSTORE_PASSWORD }}" 2>&1 | grep "SHA1:" | head -1
+          keytool -list -v -keystore android/app/upload-keystore.jks -alias upload -storepass "${{ secrets.KEYSTORE_PASSWORD }}" 2>&1
 
       - name: Create key.properties
         run: |
