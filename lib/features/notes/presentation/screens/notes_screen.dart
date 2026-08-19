@@ -328,11 +328,15 @@ class _NoteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final isDefaultColor = backgroundColor == Colors.transparent;
     final tileBg = isDefaultColor
         ? Colors.transparent
-        : backgroundColor.withValues(alpha: 0.25);
+        : backgroundColor.withValues(alpha: isDark ? 0.35 : 0.25);
     final titleText = note.title.trim().isEmpty ? 'Untitled note' : note.title.trim();
+    final titleColor = isDefaultColor
+        ? theme.colorScheme.onSurface
+        : (isDark ? Colors.white : Colors.black87);
 
     return InkWell(
       onTap: onTap,
@@ -356,7 +360,7 @@ class _NoteCard extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.noteTitle.copyWith(
-                  color: isDefaultColor ? theme.colorScheme.onSurface : Colors.black87,
+                  color: titleColor,
                   fontSize: 16,
                   height: 1.2,
                 ),
@@ -367,6 +371,7 @@ class _NoteCard extends StatelessWidget {
               icon: Icon(
                 note.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
                 size: 18,
+                color: note.isPinned ? theme.colorScheme.primary : (isDefaultColor ? theme.colorScheme.onSurfaceVariant : (isDark ? Colors.white70 : Colors.black54)),
               ),
               tooltip: note.isPinned ? 'Unpin' : 'Pin',
               onPressed: onTogglePin,
@@ -420,12 +425,19 @@ class _NoteGridCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final isDefaultColor = backgroundColor == Colors.transparent;
     final tileBg = isDefaultColor
         ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)
-        : backgroundColor.withValues(alpha: 0.25);
+        : backgroundColor.withValues(alpha: isDark ? 0.35 : 0.25);
     final titleText = note.title.trim().isEmpty ? 'Untitled note' : note.title.trim();
     final contentPreview = note.content.trim();
+    final titleColor = isDefaultColor
+        ? theme.colorScheme.onSurface
+        : (isDark ? Colors.white : Colors.black87);
+    final contentColor = isDefaultColor
+        ? theme.colorScheme.onSurfaceVariant
+        : (isDark ? Colors.white70 : Colors.black54);
 
     return InkWell(
       onTap: onTap,
@@ -457,7 +469,7 @@ class _NoteGridCard extends StatelessWidget {
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.noteTitle.copyWith(
-                      color: isDefaultColor ? theme.colorScheme.onSurface : Colors.black87,
+                      color: titleColor,
                       fontSize: 15,
                       height: 1.3,
                     ),
@@ -466,8 +478,11 @@ class _NoteGridCard extends StatelessWidget {
                 if (note.isPinned)
                   Padding(
                     padding: const EdgeInsets.only(left: 4),
-                    child: Icon(Icons.push_pin_rounded, size: 16,
-                        color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black54),
+                    child: Icon(
+                      Icons.push_pin_rounded,
+                      size: 16,
+                      color: note.isPinned ? theme.colorScheme.primary : contentColor,
+                    ),
                   ),
               ],
             ),
@@ -479,7 +494,7 @@ class _NoteGridCard extends StatelessWidget {
                 maxLines: 5,
                 overflow: TextOverflow.ellipsis,
                 style: AppTypography.bodySmall.copyWith(
-                  color: isDefaultColor ? theme.colorScheme.onSurfaceVariant : Colors.black54,
+                  color: contentColor,
                   height: 1.5,
                   fontSize: 13,
                 ),

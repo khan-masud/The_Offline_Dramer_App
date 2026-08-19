@@ -406,7 +406,7 @@ class _ContactListScreenState extends ConsumerState<ContactListScreen> {
     ref.invalidate(contactEntriesProvider);
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(this.context).showSnackBar(
       const SnackBar(content: Text('Contact deleted')),
     );
   }

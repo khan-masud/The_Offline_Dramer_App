@@ -3,11 +3,8 @@ import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../core/widgets/app_card.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/services/notification_service.dart';
@@ -16,6 +13,8 @@ import '../../../../core/providers/undo_provider.dart';
 import '../../../../core/providers/activity_log_provider.dart';
 import '../../data/routine_provider.dart';
 import 'routine_timer_dialog.dart';
+import 'routine_focus_player_dialog.dart';
+import '../widgets/routine_heatmap_sheet.dart';
 
 class RoutineScreen extends ConsumerWidget {
   const RoutineScreen({super.key});
@@ -42,28 +41,77 @@ class RoutineScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final todayRoutinesAsync = ref.watch(todayRoutinesProvider);
     final priorityFilter = ref.watch(routinePriorityFilterProvider);
+    final completionsAsync = ref.watch(todayCompletionsProvider);
 
     return Scaffold(
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Header Bar ──
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(child: Text('Routines', style: AppTypography.headingLarge.copyWith(color: theme.colorScheme.onSurface))),
-                  TextButton.icon(
-                    onPressed: () => _showManageRoutines(context, ref),
-                    icon: const Icon(Icons.settings_outlined, size: 18),
-                    label: const Text('Manage'),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Daily Routines',
+                        style: AppTypography.headingLarge.copyWith(
+                          color: theme.colorScheme.onSurface,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      todayRoutinesAsync.when(
+                        data: (routines) {
+                          final total = routines.length;
+                          final done = completionsAsync.valueOrNull?.length ?? 0;
+                          return Text(
+                            total > 0
+                                ? '$total scheduled today • $done completed'
+                                : 'Build healthy daily habits & routines',
+                            style: AppTypography.bodySmall.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontSize: 12,
+                            ),
+                          );
+                        },
+                        loading: () => Text(
+                          'Loading routines...',
+                          style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        ),
+                        error: (_, __) => const SizedBox.shrink(),
+                      ),
+                    ],
+                  ),
+
+                  // Header Actions
+                  Row(
+                    children: [
+                      IconButton.filledTonal(
+                        onPressed: () => _showManageRoutines(context, ref),
+                        icon: const Icon(Icons.settings_outlined, size: 18),
+                        tooltip: 'Manage Routines',
+                        style: IconButton.styleFrom(
+                          backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.3 : 0.4),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 10),
+
+            const SizedBox(height: 6),
+
+            // ── Priority Filter Segment Bar ──
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -97,13 +145,10 @@ class RoutineScreen extends ConsumerWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 8),
-            // Today's header
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text("Today's Routine", style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-            ),
+
             const SizedBox(height: 12),
+
+            // ── Routines List ──
             Expanded(
               child: todayRoutinesAsync.when(
                 data: (routines) {
@@ -115,42 +160,43 @@ class RoutineScreen extends ConsumerWidget {
                       RoutinePriorityFilter.medium => 'medium priority',
                       RoutinePriorityFilter.low => 'low priority',
                     };
-                    return _emptyState(context, ref, message: 'No $label routines');
+                    return _emptyState(context, ref, message: 'No $label routines scheduled');
                   }
                   return ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 90),
                     physics: const BouncingScrollPhysics(),
                     itemCount: displayRoutines.length,
-                    itemBuilder: (ctx, i) => _RoutineSection(
-                      routine: displayRoutines[i],
-                    )
-                        .animate().fadeIn(delay: (100 * i).ms, duration: 400.ms),
+                    itemBuilder: (ctx, i) => _RoutineSection(routine: displayRoutines[i]),
                   );
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(
-                    child: Padding(
-                  padding: const EdgeInsets.all(32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.error_outline_rounded, size: 48,
-                          color: Theme.of(context).colorScheme.error),
-                      const SizedBox(height: 12),
-                      const Text('Could not load routines'),
-                    ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.error_outline_rounded, size: 40, color: theme.colorScheme.error),
+                        const SizedBox(height: 12),
+                        const Text('Could not load routines'),
+                      ],
+                    ),
                   ),
-                )),
+                ),
               ),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         heroTag: 'routine_fab',
         onPressed: () => _showAddRoutine(context, ref),
         backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add_rounded, color: Colors.white),
+        icon: const Icon(Icons.add_rounded, color: Colors.white, size: 20),
+        label: const Text(
+          'New Routine',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.5),
+        ),
       ),
     );
   }
@@ -159,17 +205,23 @@ class RoutineScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     return Center(
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: AppColors.success.withValues(alpha: 0.1), shape: BoxShape.circle),
-            child: const Icon(Icons.loop_rounded, size: 48, color: AppColors.success),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.purple.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.bolt_rounded, size: 44, color: AppColors.purple),
           ),
-          const SizedBox(height: 20),
-          Text(message, style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurface)),
-          const SizedBox(height: 8),
-          Text('Tap + to create a routine', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 16),
+          Text(message, style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface)),
+          const SizedBox(height: 6),
+          Text(
+            'Tap New Routine below to schedule daily habits',
+            style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
         ],
       ),
     );
@@ -188,6 +240,801 @@ class RoutineScreen extends ConsumerWidget {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const _ManageRoutinesScreen()));
   }
 }
+
+// ────────────────── ROUTINE SECTION CARD ──────────────────
+
+class _RoutineSection extends ConsumerWidget {
+  final Routine routine;
+  const _RoutineSection({required this.routine});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final itemsAsync = ref.watch(routineItemsProvider(routine.id));
+    final completionsAsync = ref.watch(todayCompletionsProvider);
+
+    final priorityColor = switch (routine.priority) {
+      3 => AppColors.error,
+      2 => AppColors.warning,
+      1 => AppColors.info,
+      _ => theme.colorScheme.outline,
+    };
+
+    final priorityLabel = switch (routine.priority) {
+      3 => 'High',
+      2 => 'Med',
+      1 => 'Low',
+      _ => null,
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: routine.priority > 0
+              ? priorityColor.withValues(alpha: isDark ? 0.35 : 0.25)
+              : theme.colorScheme.outline.withValues(alpha: isDark ? 0.14 : 0.08),
+          width: routine.priority > 0 ? 1.3 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isDark ? Colors.black.withValues(alpha: 0.2) : Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header Row ──
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.purple.withValues(alpha: isDark ? 0.25 : 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.bolt_rounded, size: 20, color: AppColors.purple),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            routine.title,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: theme.colorScheme.onSurface,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15.5,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // Streak Pill (No emoji)
+                        ref.watch(routineStreakProvider(routine)).when(
+                          data: (streak) => streak > 0
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.orange.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.local_fire_department_rounded, size: 11, color: AppColors.orange),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        '$streak',
+                                        style: const TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: AppColors.orange,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                          loading: () => const SizedBox.shrink(),
+                          error: (_, __) => const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                    if (routine.description != null && routine.description!.isNotEmpty)
+                      Text(
+                        routine.description!,
+                        style: AppTypography.bodySmall.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
+                ),
+              ),
+
+              // Priority Badge
+              if (priorityLabel != null) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: priorityColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    priorityLabel,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: priorityColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
+
+              // Consistency Heatmap Button
+              IconButton(
+                icon: const Icon(Icons.calendar_month_outlined, size: 18),
+                tooltip: 'Consistency Heatmap',
+                visualDensity: VisualDensity.compact,
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => RoutineHeatmapSheet(routine: routine),
+                  );
+                },
+              ),
+
+              // Add Task to Routine Button
+              IconButton(
+                icon: const Icon(Icons.add_rounded, size: 20),
+                tooltip: 'Add Task to Routine',
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _addItem(context, ref),
+              ),
+            ],
+          ),
+
+          // ── Items & Live Progress ──
+          itemsAsync.when(
+            data: (items) {
+              if (items.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text(
+                    'No tasks added yet. Tap + to add.',
+                    style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                );
+              }
+
+              return completionsAsync.when(
+                data: (completions) {
+                  final hidden = ref.watch(hiddenItemsProvider);
+                  final visibleItems = items.where((i) => !hidden.contains('routine_item_${i.id}')).toList();
+                  final completedIds = completions.map((c) => c.routineItemId).toSet();
+                  final completed = visibleItems.where((i) => completedIds.contains(i.id)).length;
+                  final total = visibleItems.length;
+                  final progress = total > 0 ? (completed / total).clamp(0.0, 1.0) : 0.0;
+                  final isAllDone = total > 0 && completed == total;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 12),
+                      // Progress Bar Row
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isAllDone ? 'All $total tasks done today' : '$completed of $total completed',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: isAllDone ? AppColors.success : theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          if (visibleItems.isNotEmpty && !isAllDone)
+                            InkWell(
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => RoutineFocusPlayerDialog(
+                                      routine: routine,
+                                      items: visibleItems,
+                                    ),
+                                    fullscreenDialog: true,
+                                  ),
+                                );
+                              },
+                              borderRadius: BorderRadius.circular(6),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.play_circle_fill_rounded, size: 15, color: AppColors.primary),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Start Flow',
+                                      style: TextStyle(
+                                        color: AppColors.primary,
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 5,
+                          backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            isAllDone ? AppColors.success : AppColors.purple,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Item Rows
+                      ...visibleItems.map((item) {
+                        final isDone = completedIds.contains(item.id);
+                        return _RoutineItemTile(
+                          item: item,
+                          routine: routine,
+                          isDone: isDone,
+                          onToggle: () async {
+                            final db = ref.read(databaseProvider);
+                            if (isDone) {
+                              await db.unmarkRoutineItemCompleted(item.id);
+                            } else {
+                              HapticFeedback.mediumImpact();
+                              await db.markRoutineItemCompleted(item.id);
+                            }
+                            ref.read(activityLogProvider.notifier).log(
+                              type: 'update',
+                              entityType: 'routine',
+                              entityTitle: item.title,
+                            );
+                          },
+                        );
+                      }),
+                    ],
+                  );
+                },
+                loading: () => const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
+                error: (_, __) => const SizedBox.shrink(),
+              );
+            },
+            loading: () => const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addItem(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _AddEditRoutineItemSheet(routine: routine),
+    );
+  }
+}
+
+// ────────────────── ROUTINE ITEM TILE ──────────────────
+
+class _RoutineItemTile extends ConsumerWidget {
+  final RoutineItem item;
+  final Routine routine;
+  final bool isDone;
+  final VoidCallback onToggle;
+
+  const _RoutineItemTile({
+    required this.item,
+    required this.routine,
+    required this.isDone,
+    required this.onToggle,
+  });
+
+  void _showSubtasksSheet(BuildContext context, RoutineItem item) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _RoutineSubTasksQuickSheet(item: item),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final subTasksAsync = ref.watch(routineSubTasksProvider(item.id));
+    final subTasks = subTasksAsync.valueOrNull ?? [];
+    final doneSubTasks = subTasks.where((st) => st.isCompleted).length;
+    final totalSubTasks = subTasks.length;
+
+    final itemPriorityColor = switch (item.priority) {
+      3 => AppColors.error,
+      2 => AppColors.warning,
+      1 => AppColors.info,
+      _ => Colors.transparent,
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        color: isDone
+            ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.2 : 0.3)
+            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDone
+              ? AppColors.success.withValues(alpha: 0.2)
+              : (item.priority > 0
+                  ? itemPriorityColor.withValues(alpha: 0.3)
+                  : theme.colorScheme.outline.withValues(alpha: 0.08)),
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onToggle,
+          onLongPress: () {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => _AddEditRoutineItemSheet(routine: routine, item: item),
+            );
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                // 1-Tap Round Squircle Checkbox
+                GestureDetector(
+                  onTap: onToggle,
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: isDone ? AppColors.success : Colors.transparent,
+                      borderRadius: BorderRadius.circular(7),
+                      border: Border.all(
+                        color: isDone ? AppColors.success : theme.colorScheme.outline,
+                        width: 1.8,
+                      ),
+                    ),
+                    child: isDone ? const Icon(Icons.check_rounded, size: 15, color: Colors.white) : null,
+                  ),
+                ),
+                const SizedBox(width: 10),
+
+                // Title & Subtasks Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: isDone
+                              ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6)
+                              : theme.colorScheme.onSurface,
+                          decoration: isDone ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      if (totalSubTasks > 0) ...[
+                        const SizedBox(height: 4),
+                        GestureDetector(
+                          onTap: () => _showSubtasksSheet(context, item),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.checklist_rounded, size: 11, color: AppColors.primary),
+                                const SizedBox(width: 3),
+                                Text(
+                                  '$doneSubTasks/$totalSubTasks subtasks',
+                                  style: const TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                const Icon(Icons.keyboard_arrow_down_rounded, size: 11, color: AppColors.primary),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                // Timer Action
+                IconButton(
+                  icon: const Icon(Icons.play_circle_outline_rounded, size: 20, color: AppColors.warning),
+                  tooltip: 'Start Focus',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    showDialog(
+                      context: context,
+                      builder: (_) => RoutineTimerDialog(item: item),
+                    );
+                  },
+                ),
+
+                // Edit Action
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  color: theme.colorScheme.primary,
+                  tooltip: 'Edit Task',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (_) => _AddEditRoutineItemSheet(routine: routine, item: item),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ────────────────── ROUTINE SUBTASKS QUICK SHEET ──────────────────
+
+class _RoutineSubTasksQuickSheet extends ConsumerStatefulWidget {
+  final RoutineItem item;
+
+  const _RoutineSubTasksQuickSheet({required this.item});
+
+  @override
+  ConsumerState<_RoutineSubTasksQuickSheet> createState() => _RoutineSubTasksQuickSheetState();
+}
+
+class _RoutineSubTasksQuickSheetState extends ConsumerState<_RoutineSubTasksQuickSheet> {
+  final _newSubTaskController = TextEditingController();
+
+  @override
+  void dispose() {
+    _newSubTaskController.dispose();
+    super.dispose();
+  }
+
+  void _addNewSubTask(List<RoutineSubTask> currentSubTasks) async {
+    final text = _newSubTaskController.text.trim();
+    if (text.isEmpty) return;
+
+    final db = ref.read(databaseProvider);
+    await db.addRoutineSubTask(
+      RoutineSubTasksCompanion(
+        routineItemId: Value(widget.item.id),
+        title: Value(text),
+        isCompleted: const Value(false),
+        sortOrder: Value(currentSubTasks.length),
+        createdAt: Value(DateTime.now()),
+      ),
+    );
+    _newSubTaskController.clear();
+    HapticFeedback.lightImpact();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final subTasksAsync = ref.watch(routineSubTasksProvider(widget.item.id));
+
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          top: 16,
+          left: 20,
+          right: 20,
+        ),
+        child: subTasksAsync.when(
+          data: (subTasks) {
+            final completedCount = subTasks.where((s) => s.isCompleted).length;
+            final totalCount = subTasks.length;
+            final progress = totalCount > 0 ? (completedCount / totalCount).clamp(0.0, 1.0) : 0.0;
+            final isAllDone = totalCount > 0 && completedCount == totalCount;
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header Bar
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: isDark ? 0.25 : 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.checklist_rounded, size: 20, color: AppColors.primary),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Subtasks Checklist',
+                            style: AppTypography.headingMedium.copyWith(
+                              color: theme.colorScheme.onSurface,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 17,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            widget.item.title,
+                            style: AppTypography.bodySmall.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontSize: 12,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => Navigator.pop(context),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Progress Bar Card
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: isAllDone
+                        ? AppColors.success.withValues(alpha: isDark ? 0.18 : 0.08)
+                        : theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isAllDone
+                          ? AppColors.success.withValues(alpha: 0.35)
+                          : theme.colorScheme.outline.withValues(alpha: 0.1),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            isAllDone ? 'All $totalCount subtasks completed!' : '$completedCount of $totalCount completed',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: isAllDone ? AppColors.success : theme.colorScheme.onSurface,
+                            ),
+                          ),
+                          Text(
+                            '${(progress * 100).toInt()}%',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: isAllDone ? AppColors.success : AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 6,
+                          backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            isAllDone ? AppColors.success : AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Subtasks List
+                if (subTasks.isEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Center(
+                      child: Text(
+                        'No subtasks yet. Add one below!',
+                        style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 260),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: subTasks.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 6),
+                      itemBuilder: (context, index) {
+                        final st = subTasks[index];
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: st.isCompleted
+                                ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.2)
+                                : theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: st.isCompleted
+                                  ? AppColors.success.withValues(alpha: 0.2)
+                                  : theme.colorScheme.outline.withValues(alpha: 0.08),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTap: () {
+                                  HapticFeedback.lightImpact();
+                                  ref.read(databaseProvider).toggleRoutineSubTask(st.id, !st.isCompleted);
+                                },
+                                child: Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: st.isCompleted ? AppColors.success : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: st.isCompleted ? AppColors.success : theme.colorScheme.outline,
+                                      width: 1.6,
+                                    ),
+                                  ),
+                                  child: st.isCompleted ? const Icon(Icons.check_rounded, size: 14, color: Colors.white) : null,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  st.title,
+                                  style: TextStyle(
+                                    fontSize: 13.5,
+                                    color: st.isCompleted
+                                        ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6)
+                                        : theme.colorScheme.onSurface,
+                                    decoration: st.isCompleted ? TextDecoration.lineThrough : null,
+                                    fontWeight: st.isCompleted ? FontWeight.normal : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close_rounded, size: 16),
+                                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () {
+                                  HapticFeedback.lightImpact();
+                                  ref.read(databaseProvider).deleteRoutineSubTask(st.id);
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 14),
+
+                // Add Subtask Bar
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _newSubTaskController,
+                        style: AppTypography.bodyMedium.copyWith(fontSize: 13.5),
+                        decoration: InputDecoration(
+                          hintText: 'Add a new subtask...',
+                          hintStyle: TextStyle(
+                            color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.65),
+                            fontSize: 13,
+                          ),
+                          filled: true,
+                          fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          isDense: true,
+                        ),
+                        onSubmitted: (_) => _addNewSubTask(subTasks),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filled(
+                      onPressed: () => _addNewSubTask(subTasks),
+                      icon: const Icon(Icons.add_rounded, size: 20),
+                      style: IconButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+          loading: () => const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+          error: (_, __) => const Center(child: Text('Could not load subtasks')),
+        ),
+      ),
+    );
+  }
+}
+
+// ────────────────── ADD ROUTINE MODAL SHEET ──────────────────
 
 class _AddRoutineSheet extends ConsumerStatefulWidget {
   const _AddRoutineSheet();
@@ -222,42 +1069,15 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
   }
 
   void _updateItemTitle(int index, String title) {
-    setState(() {
-      _items[index]['title'] = title;
-    });
+    setState(() => _items[index]['title'] = title);
   }
 
   void _updateItemPriority(int index, int priority) {
-    setState(() {
-      _items[index]['priority'] = priority;
-    });
+    setState(() => _items[index]['priority'] = priority);
   }
 
   void _removeItem(int index) {
-    setState(() {
-      _items.removeAt(index);
-    });
-  }
-
-  void _addSubTask(int itemIndex) {
-    setState(() {
-      (_items[itemIndex]['subTasks'] as List<Map<String, dynamic>>).add({
-        'title': '',
-        'isCompleted': false,
-      });
-    });
-  }
-
-  void _updateSubTask(int itemIndex, int subIndex, String title) {
-    setState(() {
-      (_items[itemIndex]['subTasks'] as List<Map<String, dynamic>>)[subIndex]['title'] = title;
-    });
-  }
-
-  void _removeSubTask(int itemIndex, int subIndex) {
-    setState(() {
-      (_items[itemIndex]['subTasks'] as List<Map<String, dynamic>>).removeAt(subIndex);
-    });
+    setState(() => _items.removeAt(index));
   }
 
   Future<void> _save() async {
@@ -323,7 +1143,7 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
             RoutineSubTasksCompanion(
               routineItemId: Value(itemId),
               title: Value(subTitle),
-              isCompleted: Value(false),
+              isCompleted: const Value(false),
               sortOrder: Value(j),
               createdAt: Value(DateTime.now()),
             ),
@@ -332,8 +1152,7 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
       }
 
       final prefs = ref.read(notificationPreferencesProvider);
-      final times =
-          _reminderTimes.isEmpty ? <TimeOfDay>[prefs.routineReminderTime] : _reminderTimes;
+      final times = _reminderTimes.isEmpty ? <TimeOfDay>[prefs.routineReminderTime] : _reminderTimes;
       await ref.read(notificationServiceProvider).scheduleRoutineReminders(
         routineId: routineId,
         title: 'Routine: $title',
@@ -352,7 +1171,7 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Routine created with tasks and subtasks')),
+        const SnackBar(content: Text('Routine created successfully')),
       );
     } catch (_) {
       if (!mounted) return;
@@ -365,757 +1184,367 @@ class _AddRoutineSheetState extends ConsumerState<_AddRoutineSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final isDark = theme.brightness == Brightness.dark;
 
-    return Container(
-      padding: EdgeInsets.fromLTRB(20, 20, 20, bottomInset + 20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.outline,
-                  borderRadius: BorderRadius.circular(2),
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          top: 16,
+          left: 20,
+          right: 20,
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header Row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'New Routine',
+                    style: AppTypography.headingMedium.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      FilledButton.icon(
+                        onPressed: _save,
+                        icon: const Icon(Icons.check_rounded, size: 16),
+                        label: const Text('Save'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(context),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Title Input
+              TextField(
+                controller: _titleCtrl,
+                autofocus: true,
+                style: AppTypography.bodyLarge.copyWith(fontWeight: FontWeight.w600, fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: 'Routine name (e.g. Morning Focus, Workout)...',
+                  hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.65), fontSize: 14),
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('New Routine', style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface)),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.pop(context),
+              const SizedBox(height: 10),
+
+              // Description Input
+              TextField(
+                controller: _descCtrl,
+                style: AppTypography.bodyMedium,
+                decoration: InputDecoration(
+                  hintText: 'Description or purpose (optional)...',
+                  hintStyle: TextStyle(color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.65), fontSize: 13.5),
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            TextField(controller: _titleCtrl, autofocus: true, decoration: const InputDecoration(hintText: 'Routine name...')),
-            const SizedBox(height: 12),
-            TextField(controller: _descCtrl, decoration: const InputDecoration(hintText: 'Description (optional)...')),
-            const SizedBox(height: 16),
-            Text('Repeat on', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].asMap().entries.map((e) {
-                final day = e.key + 1;
-                final isSelected = _selectedDays.contains(day);
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      isSelected ? _selectedDays.remove(day) : _selectedDays.add(day);
-                    });
-                  },
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isSelected ? AppColors.primary : Colors.transparent,
-                      border: Border.all(color: isSelected ? AppColors.primary : theme.colorScheme.outline),
-                    ),
-                    child: Center(
-                      child: Text(
-                        e.value,
-                        style: AppTypography.labelMedium.copyWith(
-                          color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 16),
+
+              // ── Repeat Days Selector (M T W T F S S) ──
+              Text(
+                'Repeat on Days',
+                style: AppTypography.labelMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].asMap().entries.map((e) {
+                  final day = e.key + 1;
+                  final isSelected = _selectedDays.contains(day);
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        isSelected ? _selectedDays.remove(day) : _selectedDays.add(day);
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isSelected
+                            ? AppColors.primary
+                            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                        border: Border.all(
+                          color: isSelected ? AppColors.primary : theme.colorScheme.outline.withValues(alpha: 0.15),
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          e.value,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-            Text('Routine Priority', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _PriorityChip(
-                  label: 'Low',
-                  color: AppColors.info,
-                  isActive: _routinePriority == 1,
-                  onTap: () => setState(() => _routinePriority = 1),
-                ),
-                const SizedBox(width: 8),
-                _PriorityChip(
-                  label: 'Medium',
-                  color: AppColors.warning,
-                  isActive: _routinePriority == 2,
-                  onTap: () => setState(() => _routinePriority = 2),
-                ),
-                const SizedBox(width: 8),
-                _PriorityChip(
-                  label: 'High',
-                  color: AppColors.error,
-                  isActive: _routinePriority == 3,
-                  onTap: () => setState(() => _routinePriority = 3),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.notifications_active_rounded, color: AppColors.warning),
-              title: Text(
-                _reminderTimes.isEmpty
-                    ? 'Reminder Times (Optional)'
-                    : 'Reminders: ${_reminderTimes.map((t) => t.format(context)).join(', ')}',
-                style: AppTypography.bodyMedium,
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.add_alarm_rounded, size: 20),
-                onPressed: () async {
-                  final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
-                  if (time != null && mounted) {
-                    setState(() {
-                      final already = _reminderTimes.any((t) => t.hour == time.hour && t.minute == time.minute);
-                      if (!already) {
-                        _reminderTimes.add(time);
-                        _reminderTimes.sort((a, b) => (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute));
-                      }
-                    });
-                  }
-                },
-              ),
-              onTap: () async {
-                final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
-                if (time != null && mounted) {
-                  setState(() {
-                    final already = _reminderTimes.any((t) => t.hour == time.hour && t.minute == time.minute);
-                    if (!already) {
-                      _reminderTimes.add(time);
-                      _reminderTimes.sort((a, b) => (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute));
-                    }
-                  });
-                }
-              },
-            ),
-            if (_reminderTimes.isNotEmpty)
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _reminderTimes.asMap().entries.map((entry) {
-                  final index = entry.key;
-                  final time = entry.value;
-                  return Chip(
-                    label: Text(time.format(context)),
-                    onDeleted: () => setState(() => _reminderTimes.removeAt(index)),
                   );
                 }).toList(),
               ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Routine Tasks', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-                TextButton.icon(
-                  onPressed: _addItem,
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('Add Task'),
+
+              const SizedBox(height: 16),
+
+              // ── Routine Priority ──
+              Text(
+                'Routine Priority',
+                style: AppTypography.labelMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-              ],
-            ),
-            if (_items.isEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text('Add tasks with priority and subtasks', style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
               ),
-            if (_items.isNotEmpty) ...[
               const SizedBox(height: 8),
-              ...List.generate(_items.length, (index) {
-                final item = _items[index];
-                final subTasks = item['subTasks'] as List<Map<String, dynamic>>;
-                final priority = item['priority'] as int? ?? 0;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(12),
+              Row(
+                children: [
+                  _PriorityChip(
+                    label: 'Low',
+                    color: AppColors.info,
+                    isActive: _routinePriority == 1,
+                    onTap: () => setState(() => _routinePriority = 1),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              initialValue: item['title'] as String,
-                              onChanged: (v) => _updateItemTitle(index, v),
-                              decoration: const InputDecoration(
-                                hintText: 'Task name...',
-                                isDense: true,
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            color: AppColors.error,
-                            onPressed: () => _removeItem(index),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _PriorityChip(
-                            label: 'None',
-                            color: theme.colorScheme.onSurfaceVariant,
-                            isActive: priority == 0,
-                            onTap: () => _updateItemPriority(index, 0),
-                          ),
-                          const SizedBox(width: 8),
-                          _PriorityChip(
-                            label: 'Low',
-                            color: AppColors.info,
-                            isActive: priority == 1,
-                            onTap: () => _updateItemPriority(index, 1),
-                          ),
-                          const SizedBox(width: 8),
-                          _PriorityChip(
-                            label: 'Med',
-                            color: AppColors.warning,
-                            isActive: priority == 2,
-                            onTap: () => _updateItemPriority(index, 2),
-                          ),
-                          const SizedBox(width: 8),
-                          _PriorityChip(
-                            label: 'High',
-                            color: AppColors.error,
-                            isActive: priority == 3,
-                            onTap: () => _updateItemPriority(index, 3),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Subtasks', style: AppTypography.labelMedium.copyWith(color: theme.colorScheme.onSurface)),
-                          TextButton.icon(
-                            onPressed: () => _addSubTask(index),
-                            icon: const Icon(Icons.add_rounded, size: 16),
-                            label: const Text('Add'),
-                            style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                          ),
-                        ],
-                      ),
-                      if (subTasks.isNotEmpty)
-                        ...List.generate(subTasks.length, (subIndex) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.subdirectory_arrow_right_rounded, size: 16),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: TextFormField(
-                                    initialValue: subTasks[subIndex]['title'] as String,
-                                    onChanged: (v) => _updateSubTask(index, subIndex, v),
-                                    decoration: const InputDecoration(
-                                      hintText: 'Subtask...',
-                                      isDense: true,
-                                      border: OutlineInputBorder(),
-                                    ),
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.close_rounded, size: 18),
-                                  onPressed: () => _removeSubTask(index, subIndex),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                    ],
+                  const SizedBox(width: 8),
+                  _PriorityChip(
+                    label: 'Medium',
+                    color: AppColors.warning,
+                    isActive: _routinePriority == 2,
+                    onTap: () => setState(() => _routinePriority = 2),
                   ),
-                );
-              }),
-            ],
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _save,
-                child: Text('Create Routine', style: AppTypography.labelLarge.copyWith(color: Colors.white)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ==================== ROUTINE SECTION ====================
-class _RoutineSection extends ConsumerWidget {
-  final Routine routine;
-  const _RoutineSection({required this.routine});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final itemsAsync = ref.watch(routineItemsProvider(routine.id));
-    final completionsAsync = ref.watch(todayCompletionsProvider);
-    final priorityLabel = switch (routine.priority) {
-      3 => 'High',
-      2 => 'Medium',
-      1 => 'Low',
-      _ => null,
-    };
-    final priorityColor = switch (routine.priority) {
-      3 => AppColors.error,
-      2 => AppColors.warning,
-      1 => AppColors.info,
-      _ => theme.colorScheme.onSurfaceVariant,
-    };
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: AppCard(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
+                  const SizedBox(width: 8),
+                  _PriorityChip(
+                    label: 'High',
+                    color: AppColors.error,
+                    isActive: _routinePriority == 3,
+                    onTap: () => setState(() => _routinePriority = 3),
                   ),
-                  child: const Icon(Icons.loop_rounded, size: 20, color: AppColors.success),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(routine.title, style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface), overflow: TextOverflow.ellipsis),
-                          ),
-                          const SizedBox(width: 8),
-                          ref.watch(routineStreakProvider(routine)).when(
-                            data: (streak) => streak > 0
-                                ? Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(color: AppColors.error.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
-                                    child: Text('🔥 $streak', style: AppTypography.labelSmall.copyWith(color: AppColors.error)),
-                                  )
-                                : const SizedBox.shrink(),
-                            loading: () => const SizedBox.shrink(),
-                            error: (_, __) => const SizedBox.shrink(),
-                          ),
-                        ],
-                      ),
-                      if (routine.description != null)
-                        Text(routine.description!, style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                    ],
-                  ),
-                ),
-                if (priorityLabel != null) ...[
-                  _PriorityBadgeSmall(label: priorityLabel, color: priorityColor),
-                  const SizedBox(width: 6),
                 ],
-                // Add item button
-                IconButton(
-                  icon: const Icon(Icons.add_rounded, size: 20),
-                  onPressed: () => _addItem(context, ref),
-                  visualDensity: VisualDensity.compact,
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── Reminder Times ──
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Reminder Times',
+                    style: AppTypography.labelMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () async {
+                      final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+                      if (time != null && mounted) {
+                        setState(() {
+                          final already = _reminderTimes.any((t) => t.hour == time.hour && t.minute == time.minute);
+                          if (!already) {
+                            _reminderTimes.add(time);
+                            _reminderTimes.sort((a, b) => (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute));
+                          }
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.add_alarm_rounded, size: 16),
+                    label: const Text('Add Time', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                  ),
+                ],
+              ),
+              if (_reminderTimes.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  children: _reminderTimes.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final time = entry.value;
+                    return Chip(
+                      label: Text(time.format(context), style: const TextStyle(fontSize: 12)),
+                      deleteIcon: const Icon(Icons.close_rounded, size: 14),
+                      onDeleted: () => setState(() => _reminderTimes.removeAt(index)),
+                      visualDensity: VisualDensity.compact,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      backgroundColor: AppColors.warning.withValues(alpha: 0.12),
+                      side: BorderSide.none,
+                    );
+                  }).toList(),
                 ),
               ],
-            ),
-            itemsAsync.when(
-              data: (items) {
-                if (items.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 12),
-                    child: Text('No items yet. Tap + to add.', style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                  );
-                }
 
-                return completionsAsync.when(
-                  data: (completions) {
-                    final hidden = ref.watch(hiddenItemsProvider);
-                    final visibleItems = items.where((i) => !hidden.contains('routine_item_${i.id}')).toList();
-                    final completedIds = completions.map((c) => c.routineItemId).toSet();
-                    final completed = visibleItems.where((i) => completedIds.contains(i.id)).length;
+              const SizedBox(height: 16),
 
-                    return Column(
+              // ── Routine Tasks Builder ──
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Routine Tasks',
+                    style: AppTypography.labelMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _addItem,
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: const Text('Add Task', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+              if (_items.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Text(
+                    'Add tasks to complete in this routine',
+                    style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                ),
+              if (_items.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                ...List.generate(_items.length, (index) {
+                  final item = _items[index];
+                  final priority = item['priority'] as int? ?? 0;
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                    ),
+                    child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const SizedBox(height: 12),
-                        // Progress bar
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: visibleItems.isEmpty ? 0 : completed / visibleItems.length,
-                            backgroundColor: theme.colorScheme.outline,
-                            color: AppColors.success,
-                            minHeight: 6,
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text('$completed/${visibleItems.length} completed', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                        ),
-                        const SizedBox(height: 4),
-                        ...visibleItems.map((item) {
-                          final isDone = completedIds.contains(item.id);
-                          return Dismissible(
-                            key: ValueKey('dismiss_routine_item_${item.id}'),
-                            direction: DismissDirection.endToStart,
-                            background: Container(
-                              alignment: Alignment.centerRight,
-                              padding: const EdgeInsets.only(right: 20),
-                              decoration: BoxDecoration(
-                                color: AppColors.error,
-                                borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                              ),
-                              child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
-                            ),
-                            onDismissed: (_) {
-                              final itemKey = 'routine_item_${item.id}';
-                              final db = ref.read(databaseProvider);
-                              final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
-                              final messenger = ScaffoldMessenger.of(context);
-                              
-                              hiddenNotifier.update((state) => {...state, itemKey});
-                              messenger.clearSnackBars();
-                              
-                              bool undone = false;
-                              final timer = Timer(const Duration(seconds: 3), () async {
-                                if (!undone) {
-                                  await db.deleteRoutineItem(item.id);
-                                  hiddenNotifier.update((state) {
-                                    final s = {...state};
-                                    s.remove(itemKey);
-                                    return s;
-                                  });
-                                  ref.read(activityLogProvider.notifier).log(
-                                    type: 'delete',
-                                    entityType: 'routine',
-                                    entityTitle: 'Task: ${item.title}',
-                                  );
-                                }
-                                messenger.hideCurrentSnackBar();
-                              });
-                              
-                              messenger.showSnackBar(
-                                SnackBar(
-                                  content: Text('Task "${item.title}" removed from routine'),
-                                  duration: const Duration(seconds: 3),
-                                  action: SnackBarAction(
-                                    label: 'UNDO',
-                                    onPressed: () {
-                                      undone = true;
-                                      timer.cancel();
-                                      messenger.hideCurrentSnackBar();
-                                      hiddenNotifier.update((state) {
-                                        final s = {...state};
-                                        s.remove(itemKey);
-                                        return s;
-                                      });
-                                    },
-                                  ),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                initialValue: item['title'] as String,
+                                onChanged: (v) => _updateItemTitle(index, v),
+                                style: const TextStyle(fontSize: 13.5),
+                                decoration: const InputDecoration(
+                                  hintText: 'Task name...',
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  border: OutlineInputBorder(),
                                 ),
-                              );
-                            },
-                            child: _RoutineItemTile(
-                              item: item,
-                              routine: routine,
-                              isDone: isDone,
-                              onToggle: () async {
-                                final db = ref.read(databaseProvider);
-                                if (isDone) {
-                                  await db.unmarkRoutineItemCompleted(item.id);
-                                } else {
-                                  HapticFeedback.lightImpact();
-                                  await db.markRoutineItemCompleted(item.id);
-                                }
-                                ref.read(activityLogProvider.notifier).log(
-                                  type: 'update',
-                                  entityType: 'routine',
-                                  entityTitle: 'Task: ${item.title}',
-                                );
-                              },
+                              ),
                             ),
-                          );
-                        }),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                              color: AppColors.error,
+                              onPressed: () => _removeItem(index),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            _PriorityChip(
+                              label: 'None',
+                              color: theme.colorScheme.onSurfaceVariant,
+                              isActive: priority == 0,
+                              onTap: () => _updateItemPriority(index, 0),
+                            ),
+                            const SizedBox(width: 6),
+                            _PriorityChip(
+                              label: 'Low',
+                              color: AppColors.info,
+                              isActive: priority == 1,
+                              onTap: () => _updateItemPriority(index, 1),
+                            ),
+                            const SizedBox(width: 6),
+                            _PriorityChip(
+                              label: 'Med',
+                              color: AppColors.warning,
+                              isActive: priority == 2,
+                              onTap: () => _updateItemPriority(index, 2),
+                            ),
+                            const SizedBox(width: 6),
+                            _PriorityChip(
+                              label: 'High',
+                              color: AppColors.error,
+                              isActive: priority == 3,
+                              onTap: () => _updateItemPriority(index, 3),
+                            ),
+                          ],
+                        ),
                       ],
-                    );
-                  },
-                  loading: () => const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
-                  error: (_, __) => const SizedBox.shrink(),
-                );
-              },
-              loading: () => const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _addItem(BuildContext context, WidgetRef ref) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AddEditRoutineItemSheet(routine: routine),
-    );
-  }
-}
-
-class _PriorityFilterTab extends StatelessWidget {
-  final String label;
-  final bool isActive;
-  final VoidCallback onTap;
-  final Color activeColor;
-
-  const _PriorityFilterTab({
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-    this.activeColor = AppColors.primary,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: 180.ms,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isActive ? activeColor.withValues(alpha: 0.14) : theme.colorScheme.surface,
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: isActive ? activeColor : theme.colorScheme.outline,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: AppTypography.labelSmall.copyWith(
-                color: isActive ? activeColor : theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RoutineItemTile extends ConsumerWidget {
-  final RoutineItem item;
-  final Routine routine;
-  final bool isDone;
-  final VoidCallback onToggle;
-  const _RoutineItemTile({required this.item, required this.routine, required this.isDone, required this.onToggle});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final priorityColor = item.priority == 1 ? Colors.green : item.priority == 2 ? Colors.orange : item.priority == 3 ? Colors.red : Colors.transparent;
-    final priorityLabel = switch (item.priority) {
-      1 => 'Low',
-      2 => 'Medium',
-      3 => 'High',
-      _ => null,
-    };
-    final subTasksAsync = ref.watch(routineSubTasksProvider(item.id));
-    final subTasks = subTasksAsync.valueOrNull ?? [];
-    final doneSubTasks = subTasks.where((st) => st.isCompleted).length;
-
-    return InkWell(
-      onTap: onToggle,
-      onLongPress: () {
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (_) => _AddEditRoutineItemSheet(routine: routine, item: item),
-        );
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 22,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isDone ? AppColors.success : Colors.transparent,
-                    border: Border.all(color: isDone ? AppColors.success : (item.priority > 0 ? priorityColor : theme.colorScheme.onSurfaceVariant), width: 2),
-                  ),
-                  child: isDone ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: isDone ? theme.colorScheme.onSurfaceVariant : theme.colorScheme.onSurface,
-                          decoration: isDone ? TextDecoration.lineThrough : null,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (priorityLabel != null && !isDone) ...[
-                  _PriorityBadgeSmall(
-                    label: priorityLabel,
-                    color: priorityColor,
-                    outlined: false,
-                  ),
-                  const SizedBox(width: 6),
-                ],
-                if (item.startTime != null)
-                  Text(item.startTime!, style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                IconButton(
-                  icon: Icon(Icons.timer_outlined, size: 20, color: theme.colorScheme.primary),
-                  onPressed: () {
-                    showDialog(
-                      context: context,
-                      builder: (_) => RoutineTimerDialog(item: item),
-                    );
-                  },
-                  visualDensity: VisualDensity.compact,
-                ),
+                    ),
+                  );
+                }),
               ],
-            ),
-            if (subTasks.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Subtasks: $doneSubTasks/${subTasks.length}',
-                style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-              const SizedBox(height: 4),
-              ...subTasks.map(
-                (st) => Row(
-                  children: [
-                    SizedBox(
-                      width: 28,
-                      child: Checkbox(
-                        value: st.isCompleted,
-                        visualDensity: VisualDensity.compact,
-                        onChanged: (v) {
-                          HapticFeedback.lightImpact();
-                          ref.read(databaseProvider).toggleRoutineSubTask(st.id, v ?? false);
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        st.title,
-                        style: AppTypography.bodySmall.copyWith(
-                          color: st.isCompleted ? theme.colorScheme.onSurfaceVariant : theme.colorScheme.onSurface,
-                          decoration: st.isCompleted ? TextDecoration.lineThrough : null,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+
+              const SizedBox(height: 24),
             ],
-          ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _PriorityBadgeSmall extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool outlined;
-
-  const _PriorityBadgeSmall({
-    required this.label,
-    required this.color,
-    this.outlined = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final badgeContent = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.flag_rounded, size: 9, color: color),
-        const SizedBox(width: 3),
-        Text(
-          label,
-          style: AppTypography.labelSmall.copyWith(
-            color: color,
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            height: 1.0,
-          ),
-        ),
-      ],
-    );
-
-    if (!outlined) {
-      return badgeContent;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.flag_rounded, size: 9, color: color),
-          const SizedBox(width: 3),
-          Text(
-            label,
-            style: AppTypography.labelSmall.copyWith(
-              color: color,
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              height: 1.0,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
+// ────────────────── ADD / EDIT SINGLE ROUTINE TASK SHEET ──────────────────
 
 class _AddEditRoutineItemSheet extends ConsumerStatefulWidget {
   final Routine routine;
@@ -1173,12 +1602,12 @@ class _AddEditRoutineItemSheetState extends ConsumerState<_AddEditRoutineItemShe
         routineId: Value(widget.routine.id),
         title: Value(_titleController.text.trim()),
         priority: Value(_priority),
-        sortOrder: Value(0),
+        sortOrder: const Value(0),
       ));
       ref.read(activityLogProvider.notifier).log(
         type: 'add',
         entityType: 'routine',
-        entityTitle: 'Task: ${_titleController.text.trim()}',
+        entityTitle: _titleController.text.trim(),
       );
     } else {
       itemId = widget.item!.id;
@@ -1191,7 +1620,7 @@ class _AddEditRoutineItemSheetState extends ConsumerState<_AddEditRoutineItemShe
       ref.read(activityLogProvider.notifier).log(
         type: 'update',
         entityType: 'routine',
-        entityTitle: 'Task: ${_titleController.text.trim()}',
+        entityTitle: _titleController.text.trim(),
       );
 
       final existing = await db.watchRoutineSubTasks(itemId).first;
@@ -1218,240 +1647,207 @@ class _AddEditRoutineItemSheetState extends ConsumerState<_AddEditRoutineItemShe
   }
 
   void _addSubTask() {
-    setState(() {
-      _subTasks.add({'title': '', 'isCompleted': false});
-    });
+    setState(() => _subTasks.add({'title': '', 'isCompleted': false}));
   }
 
   void _updateSubTask(int index, String title, bool isCompleted) {
-    setState(() {
-      _subTasks[index] = {
-        'title': title,
-        'isCompleted': isCompleted,
-      };
-    });
+    setState(() => _subTasks[index] = {'title': title, 'isCompleted': isCompleted});
   }
 
   void _removeSubTask(int index) {
-    setState(() {
-      _subTasks.removeAt(index);
-    });
+    setState(() => _subTasks.removeAt(index));
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final insets = EdgeInsets.only(
-      bottom: MediaQuery.of(context).viewInsets.bottom,
-      top: 24, left: 20, right: 20,
-    );
+    final isDark = theme.brightness == Brightness.dark;
 
-    return Container(
-      padding: insets,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  widget.item == null ? 'New Routine Task' : 'Edit Routine Task',
-                  style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _titleController,
-              autofocus: widget.item == null,
-              style: AppTypography.bodyLarge,
-              decoration: InputDecoration(
-                hintText: 'What needs to be done?',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                filled: true,
-                fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Subtasks', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-                TextButton.icon(
-                  onPressed: _addSubTask,
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('Add Item'),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: AppColors.primary,
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          top: 16,
+          left: 20,
+          right: 20,
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    widget.item == null ? 'New Routine Task' : 'Edit Routine Task',
+                    style: AppTypography.headingMedium.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if (_subTasks.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ...List.generate(_subTasks.length, (index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0),
-                  child: Row(
+                  Row(
                     children: [
-                      Icon(Icons.drag_indicator_rounded, color: theme.colorScheme.outline),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          initialValue: _subTasks[index]['title'],
-                          onChanged: (val) => _updateSubTask(index, val, _subTasks[index]['isCompleted'] ?? false),
-                          style: AppTypography.bodyMedium,
-                          decoration: InputDecoration(
-                            hintText: 'Subtask item...',
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: const BorderSide(color: AppColors.primary),
-                            ),
-                          ),
+                      FilledButton.icon(
+                        onPressed: _save,
+                        icon: const Icon(Icons.check_rounded, size: 16),
+                        label: const Text('Save'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          visualDensity: VisualDensity.compact,
                         ),
                       ),
+                      const SizedBox(width: 8),
                       IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 20),
-                        color: AppColors.error,
-                        onPressed: () => _removeSubTask(index),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(context),
+                        visualDensity: VisualDensity.compact,
                       ),
                     ],
                   ),
-                );
-              }),
-            ],
-            const SizedBox(height: 16),
-            Text('Priority', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _PriorityChip(
-                  label: 'None',
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _titleController,
+                autofocus: widget.item == null,
+                style: AppTypography.bodyLarge.copyWith(fontWeight: FontWeight.w600, fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: 'What needs to be done?',
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Priority Selector
+              Text(
+                'Task Priority',
+                style: AppTypography.labelMedium.copyWith(
+                  fontWeight: FontWeight.bold,
                   color: theme.colorScheme.onSurfaceVariant,
-                  isActive: _priority == 0,
-                  onTap: () => setState(() => _priority = 0),
                 ),
-                const SizedBox(width: 8),
-                _PriorityChip(
-                  label: 'Low',
-                  color: AppColors.info,
-                  isActive: _priority == 1,
-                  onTap: () => setState(() => _priority = 1),
-                ),
-                const SizedBox(width: 8),
-                _PriorityChip(
-                  label: 'Med',
-                  color: AppColors.warning,
-                  isActive: _priority == 2,
-                  onTap: () => setState(() => _priority = 2),
-                ),
-                const SizedBox(width: 8),
-                _PriorityChip(
-                  label: 'High',
-                  color: AppColors.error,
-                  isActive: _priority == 3,
-                  onTap: () => setState(() => _priority = 3),
-                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _PriorityChip(
+                    label: 'None',
+                    color: theme.colorScheme.onSurfaceVariant,
+                    isActive: _priority == 0,
+                    onTap: () => setState(() => _priority = 0),
+                  ),
+                  const SizedBox(width: 6),
+                  _PriorityChip(
+                    label: 'Low',
+                    color: AppColors.info,
+                    isActive: _priority == 1,
+                    onTap: () => setState(() => _priority = 1),
+                  ),
+                  const SizedBox(width: 6),
+                  _PriorityChip(
+                    label: 'Med',
+                    color: AppColors.warning,
+                    isActive: _priority == 2,
+                    onTap: () => setState(() => _priority = 2),
+                  ),
+                  const SizedBox(width: 6),
+                  _PriorityChip(
+                    label: 'High',
+                    color: AppColors.error,
+                    isActive: _priority == 3,
+                    onTap: () => setState(() => _priority = 3),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // Subtasks
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Subtasks',
+                    style: AppTypography.labelMedium.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: _addSubTask,
+                    icon: const Icon(Icons.add_rounded, size: 16),
+                    label: const Text('Add Item', style: TextStyle(fontSize: 12)),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+              if (_subTasks.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                ...List.generate(_subTasks.length, (index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6.0),
+                    child: Row(
+                      children: [
+                        Icon(Icons.drag_indicator_rounded, size: 16, color: theme.colorScheme.outline),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: _subTasks[index]['title'],
+                            onChanged: (val) => _updateSubTask(index, val, _subTasks[index]['isCompleted'] ?? false),
+                            style: AppTypography.bodyMedium,
+                            decoration: InputDecoration(
+                              hintText: 'Subtask item...',
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.15)),
+                              ),
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 16),
+                          color: AppColors.error,
+                          onPressed: () => _removeSubTask(index),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    ),
+                  );
+                }),
               ],
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: FilledButton(
-                onPressed: _save,
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Text(
-                  'Save Routine Task',
-                  style: AppTypography.labelLarge.copyWith(color: Colors.white, fontSize: 16),
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
-class _PriorityChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _PriorityChip({
-    required this.label,
-    required this.color,
-    required this.isActive,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: 200.ms,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? color.withValues(alpha: 0.15) : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-            border: Border.all(
-              color: isActive ? color : Theme.of(context).colorScheme.outline,
-            ),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: AppTypography.labelMedium.copyWith(
-                color: isActive ? color : Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
+              const SizedBox(height: 24),
+            ],
           ),
         ),
       ),
     );
   }
 }
-// ==================== MANAGE ROUTINES ====================
+
+// ────────────────── MANAGE ROUTINES SCREEN ──────────────────
+
 class _ManageRoutinesScreen extends ConsumerWidget {
   const _ManageRoutinesScreen();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final routinesAsync = ref.watch(routinesProvider);
 
     return Scaffold(
@@ -1463,7 +1859,10 @@ class _ManageRoutinesScreen extends ConsumerWidget {
 
           if (routines.isEmpty) {
             return Center(
-              child: Text('No routines created yet', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              child: Text(
+                'No routines created yet',
+                style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
             );
           }
           return ListView.builder(
@@ -1471,19 +1870,40 @@ class _ManageRoutinesScreen extends ConsumerWidget {
             itemCount: routines.length,
             itemBuilder: (ctx, i) {
               final r = routines[i];
-              return AppCard(
-                padding: const EdgeInsets.all(16),
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: theme.colorScheme.outline.withValues(alpha: isDark ? 0.14 : 0.08)),
+                ),
                 child: Row(
                   children: [
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(r.title, style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-                          if (r.description != null)
-                            Text(r.description!, style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                          Text(
+                            r.title,
+                            style: AppTypography.labelLarge.copyWith(
+                              color: theme.colorScheme.onSurface,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (r.description != null && r.description!.isNotEmpty)
+                            Text(
+                              r.description!,
+                              style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                            ),
                           const SizedBox(height: 4),
-                          Text(_formatDays(r.days), style: AppTypography.labelSmall.copyWith(color: AppColors.primary)),
+                          Text(
+                            _formatDays(r.days),
+                            style: AppTypography.labelSmall.copyWith(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1499,10 +1919,10 @@ class _ManageRoutinesScreen extends ConsumerWidget {
                         final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
                         final notif = ref.read(notificationServiceProvider);
                         final messenger = ScaffoldMessenger.of(context);
-                        
+
                         hiddenNotifier.update((state) => {...state, itemKey});
                         messenger.clearSnackBars();
-                        
+
                         bool undone = false;
                         final timer = Timer(const Duration(seconds: 3), () async {
                           if (!undone) {
@@ -1521,7 +1941,7 @@ class _ManageRoutinesScreen extends ConsumerWidget {
                           }
                           messenger.hideCurrentSnackBar();
                         });
-                        
+
                         messenger.showSnackBar(
                           SnackBar(
                             content: Text('Routine "${r.title}" deleted'),
@@ -1550,19 +1970,7 @@ class _ManageRoutinesScreen extends ConsumerWidget {
           );
         },
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-            child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.error_outline_rounded, size: 48,
-                  color: Theme.of(context).colorScheme.error),
-              const SizedBox(height: 12),
-              const Text('Could not load data'),
-            ],
-          ),
-        )),
+        error: (e, _) => const Center(child: Text('Could not load data')),
       ),
     );
   }
@@ -1582,6 +1990,8 @@ class _ManageRoutinesScreen extends ConsumerWidget {
   }
 }
 
+// ────────────────── EDIT ROUTINE MODAL SHEET ──────────────────
+
 class _EditRoutineSheet extends ConsumerStatefulWidget {
   final Routine routine;
 
@@ -1596,10 +2006,7 @@ class _EditRoutineSheetState extends ConsumerState<_EditRoutineSheet> {
   late final TextEditingController _descCtrl;
   late final Set<int> _selectedDays;
   final List<TimeOfDay> _reminderTimes = [];
-  final List<Map<String, Object?>> _items = [];
-  final Set<int> _originalItemIds = {};
   int _routinePriority = 2;
-  bool _isSaving = false;
 
   @override
   void initState() {
@@ -1613,7 +2020,6 @@ class _EditRoutineSheetState extends ConsumerState<_EditRoutineSheet> {
         .toSet();
     _routinePriority = widget.routine.priority;
     _parseReminderTimes(widget.routine.reminderTime);
-    _loadItems();
   }
 
   @override
@@ -1638,479 +2044,316 @@ class _EditRoutineSheetState extends ConsumerState<_EditRoutineSheet> {
     _reminderTimes.sort((a, b) => (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute));
   }
 
-  Future<void> _loadItems() async {
-    final db = ref.read(databaseProvider);
-    final items = await db.watchRoutineItems(widget.routine.id).first;
-    final loaded = <Map<String, Object?>>[];
-
-    for (final item in items) {
-      _originalItemIds.add(item.id);
-      final subTasks = await db.watchRoutineSubTasks(item.id).first;
-      final normalizedSubTasks = subTasks
-          .map<Map<String, Object?>>(
-            (st) => Map<String, Object?>.from({
-              'id': st.id,
-              'title': st.title,
-              'isCompleted': st.isCompleted,
-            }),
-          )
-          .toList(growable: true);
-      loaded.add(
-        Map<String, Object?>.from({
-          'id': item.id,
-          'tempKey': 'item_${item.id}',
-          'title': item.title,
-          'priority': item.priority,
-          'subTasks': normalizedSubTasks,
-        }),
-      );
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _items
-        ..clear()
-        ..addAll(loaded);
-    });
-  }
-
-  void _addTask() {
-    setState(() {
-      _items.add(
-        Map<String, Object?>.from({
-          'tempKey': 'tmp_${DateTime.now().microsecondsSinceEpoch}',
-          'title': '',
-          'priority': 2,
-          'subTasks': <Map<String, Object?>>[],
-        }),
-      );
-    });
-  }
-
-  void _removeTask(int index) {
-    setState(() {
-      _items.removeAt(index);
-    });
-  }
-
-  void _reorderTasks(int oldIndex, int newIndex) {
-    setState(() {
-      if (newIndex > oldIndex) newIndex -= 1;
-      final item = _items.removeAt(oldIndex);
-      _items.insert(newIndex, item);
-    });
-  }
-
-  void _addSubTask(int taskIndex) {
-    setState(() {
-      (_items[taskIndex]['subTasks'] as List<Map<String, Object?>>).add(
-        Map<String, Object?>.from({
-          'title': '',
-          'isCompleted': false,
-        }),
-      );
-    });
-  }
-
-  void _removeSubTask(int taskIndex, int subIndex) {
-    setState(() {
-      (_items[taskIndex]['subTasks'] as List<Map<String, Object?>>).removeAt(subIndex);
-    });
-  }
-
   Future<void> _save() async {
-    if (_isSaving) return;
     final title = _titleCtrl.text.trim();
-    if (title.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Routine name is required')),
-      );
-      return;
-    }
-    if (_selectedDays.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select at least one day')),
-      );
-      return;
-    }
+    if (title.isEmpty) return;
 
     final db = ref.read(databaseProvider);
-    final notif = ref.read(notificationServiceProvider);
-    final prefs = ref.read(notificationPreferencesProvider);
-
-    setState(() => _isSaving = true);
-
-    try {
-      await db.updateRoutine(
-        RoutinesCompanion(
-          id: Value(widget.routine.id),
-          title: Value(title),
-          description: Value(_descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim()),
-          priority: Value(_routinePriority),
-          days: Value(([..._selectedDays]..sort()).join(',')),
-          reminderTime: Value(
-            _reminderTimes.isEmpty
-                ? null
-                : _reminderTimes
-                    .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
-                    .join(','),
-          ),
-          createdAt: Value(widget.routine.createdAt),
+    await db.updateRoutine(
+      RoutinesCompanion(
+        id: Value(widget.routine.id),
+        title: Value(title),
+        description: Value(_descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim()),
+        priority: Value(_routinePriority),
+        days: Value(([..._selectedDays]..sort()).join(',')),
+        reminderTime: Value(
+          _reminderTimes.isEmpty
+              ? null
+              : _reminderTimes
+                  .map((t) => '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}')
+                  .join(','),
         ),
-      );
+      ),
+    );
 
-      final keptItemIds = <int>{};
-      final validItems = _items
-          .where((item) => (item['title'] as String? ?? '').trim().isNotEmpty)
-          .toList();
+    final prefs = ref.read(notificationPreferencesProvider);
+    final times = _reminderTimes.isEmpty ? <TimeOfDay>[prefs.routineReminderTime] : _reminderTimes;
+    await ref.read(notificationServiceProvider).scheduleRoutineReminders(
+      routineId: widget.routine.id,
+      title: 'Routine: $title',
+      body: 'Time to start your routine!',
+      daysOfWeek: _selectedDays.toList(),
+      reminderTimes: times,
+      alertMode: prefs.alertMode,
+    );
 
-      for (int i = 0; i < validItems.length; i++) {
-        final item = validItems[i];
-        final itemTitle = (item['title'] as String).trim();
-        final itemPriority = item['priority'] as int? ?? 2;
-        int itemId;
+    ref.read(activityLogProvider.notifier).log(
+      type: 'update',
+      entityType: 'routine',
+      entityTitle: title,
+    );
 
-        if (item['id'] is int) {
-          itemId = item['id'] as int;
-          await db.updateRoutineItem(
-            RoutineItemsCompanion(
-              id: Value(itemId),
-              routineId: Value(widget.routine.id),
-              title: Value(itemTitle),
-              priority: Value(itemPriority),
-              sortOrder: Value(i),
-            ),
-          );
-        } else {
-          itemId = await db.addRoutineItem(
-            RoutineItemsCompanion(
-              routineId: Value(widget.routine.id),
-              title: Value(itemTitle),
-              priority: Value(itemPriority),
-              sortOrder: Value(i),
-            ),
-          );
-        }
-        keptItemIds.add(itemId);
-
-        final existingSub = await db.watchRoutineSubTasks(itemId).first;
-        for (final st in existingSub) {
-          await db.deleteRoutineSubTask(st.id);
-        }
-
-        final subTasks = item['subTasks'] as List<Map<String, Object?>>;
-        for (int s = 0; s < subTasks.length; s++) {
-          final subTitle = (subTasks[s]['title'] as String? ?? '').trim();
-          if (subTitle.isEmpty) continue;
-          await db.addRoutineSubTask(
-            RoutineSubTasksCompanion(
-              routineItemId: Value(itemId),
-              title: Value(subTitle),
-              isCompleted: Value(false),
-              sortOrder: Value(s),
-              createdAt: Value(DateTime.now()),
-            ),
-          );
-        }
-      }
-
-      final removed = _originalItemIds.difference(keptItemIds);
-      for (final id in removed) {
-        await db.deleteRoutineItem(id);
-      }
-
-      await notif.cancelRoutineReminders(widget.routine.id);
-      final times = _reminderTimes.isEmpty ? <TimeOfDay>[prefs.routineReminderTime] : _reminderTimes;
-      await notif.scheduleRoutineReminders(
-        routineId: widget.routine.id,
-        title: 'Routine: $title',
-        body: 'Time to start your routine!',
-        daysOfWeek: _selectedDays.toList(),
-        reminderTimes: times,
-        alertMode: prefs.alertMode,
-      );
-
-      ref.read(activityLogProvider.notifier).log(
-        type: 'update',
-        entityType: 'routine',
-        entityTitle: title,
-      );
-
-      if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Routine updated')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
-    }
+    if (mounted) Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final isDark = theme.brightness == Brightness.dark;
 
-    return Container(
-      padding: EdgeInsets.fromLTRB(20, 20, 20, bottomInset + 20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.outline,
-                  borderRadius: BorderRadius.circular(2),
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          top: 16,
+          left: 20,
+          right: 20,
+        ),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Edit Routine',
+                    style: AppTypography.headingMedium.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      FilledButton.icon(
+                        onPressed: _save,
+                        icon: const Icon(Icons.check_rounded, size: 16),
+                        label: const Text('Save'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(context),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _titleCtrl,
+                style: AppTypography.bodyLarge.copyWith(fontWeight: FontWeight.w600, fontSize: 16),
+                decoration: InputDecoration(
+                  hintText: 'Routine name...',
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text('Edit Routine', style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface)),
-            const SizedBox(height: 12),
-            TextField(controller: _titleCtrl, decoration: const InputDecoration(hintText: 'Routine name...')),
-            const SizedBox(height: 10),
-            TextField(controller: _descCtrl, decoration: const InputDecoration(hintText: 'Description (optional)...')),
-            const SizedBox(height: 14),
-            Text('Routine Priority', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                _PriorityChip(
-                  label: 'Low',
-                  color: AppColors.info,
-                  isActive: _routinePriority == 1,
-                  onTap: () => setState(() => _routinePriority = 1),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _descCtrl,
+                style: AppTypography.bodyMedium,
+                decoration: InputDecoration(
+                  hintText: 'Description (optional)...',
+                  filled: true,
+                  fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 ),
-                const SizedBox(width: 8),
-                _PriorityChip(
-                  label: 'Medium',
-                  color: AppColors.warning,
-                  isActive: _routinePriority == 2,
-                  onTap: () => setState(() => _routinePriority = 2),
+              ),
+              const SizedBox(height: 16),
+
+              // Days
+              Text(
+                'Repeat on Days',
+                style: AppTypography.labelMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 8),
-                _PriorityChip(
-                  label: 'High',
-                  color: AppColors.error,
-                  isActive: _routinePriority == 3,
-                  onTap: () => setState(() => _routinePriority = 3),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Text('Repeat on', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].asMap().entries.map((entry) {
-                final day = entry.key + 1;
-                final isSelected = _selectedDays.contains(day);
-                return GestureDetector(
-                  onTap: () => setState(() {
-                    isSelected ? _selectedDays.remove(day) : _selectedDays.add(day);
-                  }),
-                  child: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: isSelected ? AppColors.primary : Colors.transparent,
-                      border: Border.all(color: isSelected ? AppColors.primary : theme.colorScheme.outline),
-                    ),
-                    child: Center(
-                      child: Text(
-                        entry.value,
-                        style: AppTypography.labelMedium.copyWith(
-                          color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: ['M', 'T', 'W', 'T', 'F', 'S', 'S'].asMap().entries.map((e) {
+                  final day = e.key + 1;
+                  final isSelected = _selectedDays.contains(day);
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        isSelected ? _selectedDays.remove(day) : _selectedDays.add(day);
+                      });
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isSelected
+                            ? AppColors.primary
+                            : theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                        border: Border.all(
+                          color: isSelected ? AppColors.primary : theme.colorScheme.outline.withValues(alpha: 0.15),
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          e.value,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 14),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.notifications_active_rounded, color: AppColors.warning),
-              title: Text(
-                _reminderTimes.isEmpty
-                    ? 'Reminder Times (Optional)'
-                    : 'Reminders: ${_reminderTimes.map((t) => t.format(context)).join(', ')}',
-                style: AppTypography.bodyMedium,
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.add_alarm_rounded),
-                onPressed: () async {
-                  final picked = await showTimePicker(context: context, initialTime: TimeOfDay.now());
-                  if (picked == null || !mounted) return;
-                  setState(() {
-                    final exists = _reminderTimes.any((t) => t.hour == picked.hour && t.minute == picked.minute);
-                    if (!exists) {
-                      _reminderTimes.add(picked);
-                      _reminderTimes.sort(
-                        (a, b) => (a.hour * 60 + a.minute).compareTo(b.hour * 60 + b.minute),
-                      );
-                    }
-                  });
-                },
-              ),
-            ),
-            if (_reminderTimes.isNotEmpty)
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _reminderTimes.asMap().entries.map((entry) {
-                  return Chip(
-                    label: Text(entry.value.format(context)),
-                    onDeleted: () => setState(() => _reminderTimes.removeAt(entry.key)),
                   );
                 }).toList(),
               ),
-            const SizedBox(height: 14),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Routine Tasks', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-                TextButton.icon(
-                  onPressed: _addTask,
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('Add Task'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              onReorder: _reorderTasks,
-              itemCount: _items.length,
-              itemBuilder: (context, index) {
-                final item = _items[index];
-                final subTasks = item['subTasks'] as List<Map<String, Object?>>;
 
-                return Container(
-                  key: ValueKey(item['tempKey'] ?? 'task_$index'),
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.28),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.drag_indicator_rounded),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: TextFormField(
-                              initialValue: item['title'] as String? ?? '',
-                              onChanged: (v) => item['title'] = v,
-                              decoration: const InputDecoration(
-                                hintText: 'Task title...',
-                                isDense: true,
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
-                            onPressed: () => _removeTask(index),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          _PriorityChip(
-                            label: 'Low',
-                            color: AppColors.info,
-                            isActive: (item['priority'] as int? ?? 2) == 1,
-                            onTap: () => setState(() => item['priority'] = 1),
-                          ),
-                          const SizedBox(width: 8),
-                          _PriorityChip(
-                            label: 'Med',
-                            color: AppColors.warning,
-                            isActive: (item['priority'] as int? ?? 2) == 2,
-                            onTap: () => setState(() => item['priority'] = 2),
-                          ),
-                          const SizedBox(width: 8),
-                          _PriorityChip(
-                            label: 'High',
-                            color: AppColors.error,
-                            isActive: (item['priority'] as int? ?? 2) == 3,
-                            onTap: () => setState(() => item['priority'] = 3),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('Subtasks', style: AppTypography.labelMedium),
-                          TextButton.icon(
-                            onPressed: () => _addSubTask(index),
-                            icon: const Icon(Icons.add_rounded, size: 16),
-                            label: const Text('Add'),
-                          ),
-                        ],
-                      ),
-                      ...List.generate(subTasks.length, (subIndex) {
-                        final sub = subTasks[subIndex];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.subdirectory_arrow_right_rounded, size: 16),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: TextFormField(
-                                  initialValue: sub['title'] as String? ?? '',
-                                  onChanged: (v) => sub['title'] = v,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Subtask...',
-                                    isDense: true,
-                                    border: OutlineInputBorder(),
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close_rounded, size: 18),
-                                onPressed: () => _removeSubTask(index, subIndex),
-                              ),
-                            ],
-                          ),
-                        );
-                      }),
-                    ],
-                  ),
-                );
-              },
-            ),
-            const SizedBox(height: 18),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isSaving ? null : _save,
-                child: Text(
-                  _isSaving ? 'Saving...' : 'Save Changes',
-                  style: AppTypography.labelLarge.copyWith(color: Colors.white),
+              const SizedBox(height: 16),
+
+              // Priority
+              Text(
+                'Priority',
+                style: AppTypography.labelMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  _PriorityChip(
+                    label: 'Low',
+                    color: AppColors.info,
+                    isActive: _routinePriority == 1,
+                    onTap: () => setState(() => _routinePriority = 1),
+                  ),
+                  const SizedBox(width: 8),
+                  _PriorityChip(
+                    label: 'Medium',
+                    color: AppColors.warning,
+                    isActive: _routinePriority == 2,
+                    onTap: () => setState(() => _routinePriority = 2),
+                  ),
+                  const SizedBox(width: 8),
+                  _PriorityChip(
+                    label: 'High',
+                    color: AppColors.error,
+                    isActive: _routinePriority == 3,
+                    onTap: () => setState(() => _routinePriority = 3),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ────────────────── REUSABLE HELPER CHIPS ──────────────────
+
+class _PriorityFilterTab extends StatelessWidget {
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+  final Color activeColor;
+
+  const _PriorityFilterTab({
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+    this.activeColor = AppColors.primary,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          decoration: BoxDecoration(
+            color: isActive
+                ? (isDark ? activeColor.withValues(alpha: 0.2) : activeColor.withValues(alpha: 0.12))
+                : theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: isActive ? activeColor : theme.colorScheme.outline.withValues(alpha: 0.15),
+              width: isActive ? 1.4 : 1.0,
             ),
-          ],
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                color: isActive ? activeColor : theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PriorityChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _PriorityChip({
+    required this.label,
+    required this.color,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: isActive ? color.withValues(alpha: 0.15) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isActive ? color : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+              width: isActive ? 1.4 : 1.0,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
+                color: isActive ? color : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         ),
       ),
     );

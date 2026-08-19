@@ -1,11 +1,10 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../../../providers/profile_provider.dart';
-import '../../data/daily_info_provider.dart';
+import '../../../todo/data/todo_provider.dart';
+import '../../../routine/data/routine_provider.dart';
 
 class GreetingHeader extends ConsumerWidget {
   const GreetingHeader({super.key});
@@ -18,245 +17,218 @@ class GreetingHeader extends ConsumerWidget {
     return 'Good Night';
   }
 
-  String _getEmoji() {
+  IconData _getGreetingIcon() {
     final hour = DateTime.now().hour;
-    if (hour < 12) return '🌅';
-    if (hour < 17) return '🌤️';
-    if (hour < 21) return '🌇';
-    return '🌙';
+    if (hour < 12) return Icons.wb_sunny_outlined;
+    if (hour < 17) return Icons.light_mode_outlined;
+    if (hour < 21) return Icons.wb_twilight_rounded;
+    return Icons.nights_stay_outlined;
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final now = DateTime.now();
     final profile = ref.watch(userProfileProvider);
-    final dailyInfoAsync = ref.watch(dailyInfoProvider);
     final profileImage = profile.imageProvider;
-    
-    final displayName = profile.name.trim().isEmpty ? 'Dreamer' : profile.name.trim();
-    final initials = displayName.isEmpty ? 'D' : displayName.substring(0, 1).toUpperCase();
+
+    final displayName = profile.name.trim().isEmpty ? 'User' : profile.name.trim();
+    final initials = displayName.isEmpty ? 'U' : displayName.substring(0, 1).toUpperCase();
+
+    // Productivity metrics calculation
+    final todoStatsAsync = ref.watch(todoStatsProvider);
+    final routinesAsync = ref.watch(todayRoutinesProvider);
+    final completionsAsync = ref.watch(todayCompletionsProvider);
+
+    int totalTasks = 0;
+    int completedTasks = 0;
+    todoStatsAsync.whenData((stats) {
+      totalTasks = stats.total;
+      completedTasks = stats.completed;
+    });
+
+    int totalRoutines = 0;
+    int completedRoutines = 0;
+    routinesAsync.whenData((routines) {
+      totalRoutines = routines.length;
+    });
+    completionsAsync.whenData((completions) {
+      completedRoutines = completions.length;
+    });
+
+    final totalItems = totalTasks + totalRoutines;
+    final completedItems = completedTasks + completedRoutines;
+    final progressFraction = totalItems > 0 ? (completedItems / totalItems).clamp(0.0, 1.0) : 0.0;
+    final progressPercent = (progressFraction * 100).toInt();
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? const [
+                  Color(0xFF1E1B4B), // Deep Slate Indigo
+                  Color(0xFF311042), // Deep Violet
+                ]
+              : const [
+                  Color(0xFF4338CA), // Royal Indigo
+                  Color(0xFF6D28D9), // Vibrant Purple
+                ],
+        ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.25),
-            blurRadius: 20,
+            color: (isDark ? Colors.black : const Color(0xFF4338CA)).withValues(alpha: isDark ? 0.35 : 0.22),
+            blurRadius: 18,
             offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(28),
-        child: Stack(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Background Base Gradient
-            Positioned.fill(
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      Color(0xFF4F46E5), // Indigo
-                      Color(0xFF7C3AED), // Deeper Indigo
+            // ── Top Row: Time Greeting + Avatar ──
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Greeting Pill with Outline Icon
+                      Row(
+                        children: [
+                          Icon(_getGreetingIcon(), color: Colors.white70, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            _getGreeting(),
+                            style: AppTypography.labelMedium.copyWith(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+
+                      // User Name
+                      Text(
+                        displayName,
+                        style: AppTypography.headingLarge.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 22,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+
+                      // Formatted Date
+                      Text(
+                        DateFormat('EEEE, MMMM d, yyyy').format(now),
+                        style: AppTypography.bodySmall.copyWith(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              ),
-            ),
-            
-            // Decorative Blobs for Glassmorphism pop
-            Positioned(
-              top: -40,
-              right: -40,
-              child: Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFFF43F5E).withValues(alpha: 0.6), // Rose
+
+                // User Avatar
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.all(2),
+                  child: ClipOval(
+                    child: profileImage != null
+                        ? Image(
+                            image: profileImage,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _initialAvatar(initials),
+                          )
+                        : _initialAvatar(initials),
+                  ),
                 ),
-              ),
+              ],
             ),
-            Positioned(
-              bottom: -50,
-              left: -20,
-              child: Container(
-                width: 180,
-                height: 180,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFF0EA5E9).withValues(alpha: 0.5), // Light Blue
-                ),
+
+            const SizedBox(height: 20),
+
+            // ── Live Productivity Completion Progress Bar ──
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
               ),
-            ),
-            
-            // Foreground Content
-            Padding(
-              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header Row
                   Row(
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${_getGreeting()}, $displayName ${_getEmoji()}',
-                              style: AppTypography.headingLarge.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                shadows: [
-                                  Shadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 4, offset: const Offset(0, 2))
-                                ]
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              DateFormat('EEEE, MMMM d, yyyy').format(now),
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: Colors.white.withValues(alpha: 0.9),
-                              ),
-                            ),
-                          ],
+                      const Icon(Icons.bolt_rounded, size: 16, color: Color(0xFFFBBF24)), // Amber bolt
+                      const SizedBox(width: 6),
+                      Text(
+                        "Today's Progress",
+                        style: AppTypography.labelMedium.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
-                      Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.5), width: 2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.1),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                      const Spacer(),
+                      Text(
+                        totalItems > 0 ? '$completedItems of $totalItems completed' : 'No tasks scheduled',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontWeight: FontWeight.w600,
                         ),
-                        padding: const EdgeInsets.all(2),
-                        child: ClipOval(
-                          child: profileImage != null
-                              ? Image(
-                                  image: profileImage,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => _initialAvatar(initials),
-                                )
-                              : _initialAvatar(initials),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '$progressPercent%',
+                        style: AppTypography.labelMedium.copyWith(
+                          color: const Color(0xFF34D399), // Emerald
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ],
                   ),
-                  
-                  // Daily Info Cards (Glassmorphic)
-                  dailyInfoAsync.when(
-                    data: (info) {
-                      if (info == null) return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 24.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildGlassCard(
-                              icon: Icons.format_quote_rounded,
-                              title: "Daily Motivation",
-                              content: '"${info.quote}"',
-                              footer: "- ${info.author}",
-                            ),
-                            const SizedBox(height: 16),
-                            _buildGlassCard(
-                              icon: Icons.history_edu_rounded,
-                              title: "Historical Echoes",
-                              content: info.historicalEvent,
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
+                  const SizedBox(height: 8),
+
+                  // Progress Bar Track
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: totalItems > 0 ? progressFraction : 0.0,
+                      minHeight: 6,
+                      backgroundColor: Colors.white.withValues(alpha: 0.2),
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF34D399)),
+                    ),
                   ),
                 ],
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassCard({
-    required IconData icon, 
-    required String title, 
-    required String content, 
-    String? footer
-  }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-            boxShadow: [
-               BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-               )
-            ]
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                   Container(
-                     padding: const EdgeInsets.all(6),
-                     decoration: BoxDecoration(
-                       color: Colors.white.withValues(alpha: 0.2),
-                       shape: BoxShape.circle,
-                     ),
-                     child: Icon(icon, color: Colors.white, size: 16),
-                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    title,
-                    style: AppTypography.labelMedium.copyWith(color: Colors.white, fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                content,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: Colors.white.withValues(alpha: 0.95),
-                  height: 1.4,
-                  fontStyle: footer != null ? FontStyle.italic : FontStyle.normal,
-                ),
-              ),
-              if (footer != null) ...[
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Text(
-                    footer,
-                    style: AppTypography.labelSmall.copyWith(color: Colors.white.withValues(alpha: 0.8), fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ]
-            ],
-          ),
         ),
       ),
     );
@@ -270,7 +242,7 @@ class GreetingHeader extends ConsumerWidget {
         initials,
         style: const TextStyle(
           fontWeight: FontWeight.w800,
-          fontSize: 22,
+          fontSize: 20,
           color: Colors.white,
         ),
       ),

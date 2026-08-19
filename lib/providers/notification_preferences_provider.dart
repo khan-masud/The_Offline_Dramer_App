@@ -9,6 +9,9 @@ class NotificationPreferencesState {
   final TimeOfDay birthdayReminderTime;
   final ReminderAlertMode alertMode;
   final int incompleteReminderIntervalHours;
+  final bool enableDebtReminders;
+  final TimeOfDay debtReminderTime;
+  final bool debtRemindDayBefore;
   final bool isLoading;
 
   const NotificationPreferencesState({
@@ -16,6 +19,9 @@ class NotificationPreferencesState {
     this.birthdayReminderTime = const TimeOfDay(hour: 0, minute: 0),
     this.alertMode = ReminderAlertMode.ringAndVibration,
     this.incompleteReminderIntervalHours = 3,
+    this.enableDebtReminders = true,
+    this.debtReminderTime = const TimeOfDay(hour: 9, minute: 0),
+    this.debtRemindDayBefore = true,
     this.isLoading = true,
   });
 
@@ -24,6 +30,9 @@ class NotificationPreferencesState {
     TimeOfDay? birthdayReminderTime,
     ReminderAlertMode? alertMode,
     int? incompleteReminderIntervalHours,
+    bool? enableDebtReminders,
+    TimeOfDay? debtReminderTime,
+    bool? debtRemindDayBefore,
     bool? isLoading,
   }) {
     return NotificationPreferencesState(
@@ -32,6 +41,9 @@ class NotificationPreferencesState {
       alertMode: alertMode ?? this.alertMode,
       incompleteReminderIntervalHours:
           incompleteReminderIntervalHours ?? this.incompleteReminderIntervalHours,
+      enableDebtReminders: enableDebtReminders ?? this.enableDebtReminders,
+      debtReminderTime: debtReminderTime ?? this.debtReminderTime,
+      debtRemindDayBefore: debtRemindDayBefore ?? this.debtRemindDayBefore,
       isLoading: isLoading ?? this.isLoading,
     );
   }
@@ -52,8 +64,11 @@ class NotificationPreferencesNotifier extends StateNotifier<NotificationPreferen
   static const _birthdayHourKey = 'birthday_reminder_hour';
   static const _birthdayMinuteKey = 'birthday_reminder_minute';
   static const _alertModeKey = 'notification_alert_mode';
-  static const _incompleteIntervalHoursKey =
-      'incomplete_reminder_interval_hours';
+  static const _incompleteIntervalHoursKey = 'incomplete_reminder_interval_hours';
+  static const _enableDebtRemindersKey = 'enable_debt_reminders';
+  static const _debtReminderHourKey = 'debt_reminder_hour';
+  static const _debtReminderMinuteKey = 'debt_reminder_minute';
+  static const _debtRemindDayBeforeKey = 'debt_remind_day_before';
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -71,11 +86,19 @@ class NotificationPreferencesNotifier extends StateNotifier<NotificationPreferen
       orElse: () => ReminderAlertMode.ringAndVibration,
     );
 
+    final enableDebts = prefs.getBool(_enableDebtRemindersKey) ?? true;
+    final dHour = prefs.getInt(_debtReminderHourKey) ?? 9;
+    final dMinute = prefs.getInt(_debtReminderMinuteKey) ?? 0;
+    final dDayBefore = prefs.getBool(_debtRemindDayBeforeKey) ?? true;
+
     state = state.copyWith(
       routineReminderTime: TimeOfDay(hour: hour, minute: minute),
       birthdayReminderTime: TimeOfDay(hour: bHour, minute: bMinute),
       alertMode: mode,
       incompleteReminderIntervalHours: intervalHours,
+      enableDebtReminders: enableDebts,
+      debtReminderTime: TimeOfDay(hour: dHour, minute: dMinute),
+      debtRemindDayBefore: dDayBefore,
       isLoading: false,
     );
   }
@@ -105,5 +128,24 @@ class NotificationPreferencesNotifier extends StateNotifier<NotificationPreferen
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_incompleteIntervalHoursKey, safeHours);
     state = state.copyWith(incompleteReminderIntervalHours: safeHours);
+  }
+
+  Future<void> setEnableDebtReminders(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_enableDebtRemindersKey, enabled);
+    state = state.copyWith(enableDebtReminders: enabled);
+  }
+
+  Future<void> setDebtReminderTime(TimeOfDay time) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_debtReminderHourKey, time.hour);
+    await prefs.setInt(_debtReminderMinuteKey, time.minute);
+    state = state.copyWith(debtReminderTime: time);
+  }
+
+  Future<void> setDebtRemindDayBefore(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_debtRemindDayBeforeKey, enabled);
+    state = state.copyWith(debtRemindDayBefore: enabled);
   }
 }

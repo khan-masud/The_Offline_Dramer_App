@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../core/theme/app_dimensions.dart';
 import '../../../../core/theme/app_typography.dart';
-import '../../../../core/widgets/app_card.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/providers/undo_provider.dart';
@@ -16,6 +14,10 @@ import '../../data/recurring_transaction_service.dart';
 import 'debts_screen.dart';
 import '../widgets/add_transaction_sheet.dart';
 import '../widgets/money_chart.dart';
+import '../widgets/category_budget_sheet.dart';
+import '../widgets/cashflow_trend_chart.dart';
+import '../widgets/manage_wallets_sheet.dart';
+import '../../data/money_export_service.dart';
 
 class MoneyScreen extends ConsumerStatefulWidget {
   const MoneyScreen({super.key});
@@ -39,6 +41,7 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
     ref.watch(recurringTransactionServiceProvider);
 
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final selectedMonth = ref.watch(selectedMonthProvider);
     final statsAsync = ref.watch(monthStatsProvider);
     final filteredTxAsync = ref.watch(filteredTransactionsProvider);
@@ -51,9 +54,9 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            // ── Header Bar ──
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Row(
                 children: [
                   Expanded(
@@ -63,18 +66,52 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                             autofocus: true,
                             decoration: InputDecoration(
                               hintText: 'Search transactions...',
+                              hintStyle: TextStyle(
+                                fontSize: 13.5,
+                                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                              ),
                               isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(99)),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              filled: true,
+                              fillColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.3 : 0.4),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(99),
+                                borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(99),
+                                borderSide: BorderSide(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(99),
+                                borderSide: const BorderSide(color: AppColors.primary, width: 1.2),
+                              ),
                             ),
                             onChanged: (v) => ref.read(transactionSearchProvider.notifier).state = v,
                           )
-                        : Text('Money',
-                            style: AppTypography.headingLarge
-                                .copyWith(color: theme.colorScheme.onSurface)),
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Money & Cashflow',
+                                style: AppTypography.headingLarge.copyWith(
+                                  color: theme.colorScheme.onSurface,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Track income, expense & budgets',
+                                style: AppTypography.bodySmall.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
                   IconButton(
-                    icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded, size: 22),
+                    icon: Icon(_isSearching ? Icons.close_rounded : Icons.search_rounded, size: 20),
                     onPressed: () {
                       setState(() {
                         _isSearching = !_isSearching;
@@ -85,18 +122,37 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                       });
                     },
                   ),
-                  if (!_isSearching)
+                  if (!_isSearching) ...[
                     IconButton(
-                      icon: const Icon(Icons.savings_outlined, size: 22),
-                      onPressed: () => _showBudgetDialog(context, ref),
-                      tooltip: 'Set Budget',
+                      icon: const Icon(Icons.file_download_outlined, size: 20),
+                      onPressed: () async {
+                        final txList = ref.read(monthTransactionsProvider).valueOrNull ?? [];
+                        final wallets = ref.read(walletsProvider).valueOrNull ?? [];
+                        if (txList.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('No transactions to export for this month')),
+                          );
+                          return;
+                        }
+                        await MoneyExportService.exportAndShareCsv(
+                          transactions: txList,
+                          month: selectedMonth,
+                          wallets: wallets,
+                        );
+                      },
+                      tooltip: 'Export CSV Statement',
                     ),
+                    IconButton(
+                      icon: const Icon(Icons.savings_outlined, size: 20),
+                      onPressed: () => _showBudgetDialog(context, ref),
+                      tooltip: 'Set Monthly Budget',
+                    ),
+                  ],
                 ],
               ),
             ),
-            const SizedBox(height: 12),
 
-            // Month selector
+            // ── Month Selector Capsule ──
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
@@ -110,19 +166,30 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                   ),
                   GestureDetector(
                     onTap: () {
-                      // Reset to current month
+                      HapticFeedback.lightImpact();
                       ref.read(selectedMonthProvider.notifier).state = DateTime.now();
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.surface,
-                        borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
-                        border: Border.all(color: theme.colorScheme.outline),
+                        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.3 : 0.4),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.15)),
                       ),
-                      child: Text(
-                        DateFormat('MMMM yyyy').format(selectedMonth),
-                        style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.calendar_month_outlined, size: 14, color: theme.colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            DateFormat('MMMM yyyy').format(selectedMonth),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurface,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -135,8 +202,151 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
 
+            // ── Wallets / Accounts Filter Bar ──
+            Consumer(
+              builder: (context, ref, _) {
+                final walletsAsync = ref.watch(walletsProvider);
+                final selectedWalletId = ref.watch(selectedWalletIdProvider);
+
+                return walletsAsync.when(
+                  data: (wallets) {
+                    if (wallets.isEmpty) return const SizedBox.shrink();
+                    return SizedBox(
+                      height: 32,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        physics: const BouncingScrollPhysics(),
+                        children: [
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              ref.read(selectedWalletIdProvider.notifier).state = null;
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              margin: const EdgeInsets.only(right: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: selectedWalletId == null
+                                    ? AppColors.primary
+                                    : theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: selectedWalletId == null
+                                      ? AppColors.primary
+                                      : theme.colorScheme.outline.withValues(alpha: 0.12),
+                                ),
+                              ),
+                              child: Text(
+                                'All Wallets',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: selectedWalletId == null ? Colors.white : theme.colorScheme.onSurfaceVariant,
+                                  fontWeight: selectedWalletId == null ? FontWeight.bold : FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                          ...wallets.map((w) {
+                            final isSelected = selectedWalletId == w.id;
+                            final wIcon = getWalletIcon(w.icon);
+                            final wColor = getWalletColor(w.color);
+
+                            return GestureDetector(
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                ref.read(selectedWalletIdProvider.notifier).state = w.id;
+                              },
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                margin: const EdgeInsets.only(right: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? wColor
+                                      : theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? wColor
+                                        : theme.colorScheme.outline.withValues(alpha: 0.12),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      wIcon,
+                                      size: 12,
+                                      color: isSelected ? Colors.white : wColor,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      w.name,
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        color: isSelected ? Colors.white : theme.colorScheme.onSurfaceVariant,
+                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }),
+                          // Add / Manage Custom Wallets Button
+                          GestureDetector(
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (_) => const ManageWalletsSheet(),
+                              );
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.only(right: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: theme.colorScheme.outline.withValues(alpha: 0.15),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.add_rounded, size: 13, color: theme.colorScheme.primary),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    'Wallets',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: theme.colorScheme.primary,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+
+            // ── Scrollable Body ──
             Expanded(
               child: CustomScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -151,7 +361,7 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                           loading: () => const _BalanceSkeleton(),
                           error: (_, __) => const SizedBox.shrink(),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 14),
 
                         // Budget progress
                         budgetProgressAsync.when(
@@ -164,7 +374,15 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                               progress: progress,
                               spent: spent,
                               budget: budget.budgetAmount,
-                            ).animate().fadeIn(duration: 400.ms);
+                              onTap: () {
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) => const CategoryBudgetSheet(),
+                                );
+                              },
+                            );
                           },
                           loading: () => const SizedBox.shrink(),
                           error: (_, __) => const SizedBox.shrink(),
@@ -172,21 +390,47 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
 
                         const SizedBox(height: 14),
                         _QuickActionsSection(
+                          onWalletsTap: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => const ManageWalletsSheet(),
+                            );
+                          },
                           onCalculatorTap: () => _showCalculatorDialog(context),
                           onDebtToolsTap: () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => const DebtsScreen()),
                           ),
-                        ).animate().fadeIn(delay: 120.ms, duration: 320.ms),
+                          onCategoryBudgetsTap: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (_) => const CategoryBudgetSheet(),
+                            );
+                          },
+                        ),
 
                         // Category breakdown chart
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 14),
                         const MoneyChart(),
 
+                        // 6-Month Cashflow Trend
+                        const SizedBox(height: 14),
+                        const CashflowTrendChart(),
+
                         // Filter tabs
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 18),
                         Row(
                           children: [
-                            Text('Transactions', style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurface)),
+                            Text(
+                              'Transactions',
+                              style: AppTypography.headingSmall.copyWith(
+                                color: theme.colorScheme.onSurface,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             const Spacer(),
                             ...TransactionTypeFilter.values.map((f) {
                               final isActive = filter == f;
@@ -198,21 +442,28 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                               return Padding(
                                 padding: const EdgeInsets.only(left: 6),
                                 child: GestureDetector(
-                                  onTap: () => ref.read(transactionTypeFilterProvider.notifier).state = f,
+                                  onTap: () {
+                                    HapticFeedback.lightImpact();
+                                    ref.read(transactionTypeFilterProvider.notifier).state = f;
+                                  },
                                   child: AnimatedContainer(
-                                    duration: 200.ms,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    duration: const Duration(milliseconds: 200),
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                                     decoration: BoxDecoration(
-                                      color: isActive ? AppColors.primary : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(AppDimensions.radiusFull),
+                                      color: isActive
+                                          ? AppColors.primary
+                                          : theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+                                      borderRadius: BorderRadius.circular(999),
                                       border: Border.all(
-                                        color: isActive ? AppColors.primary : theme.colorScheme.outline,
+                                        color: isActive ? AppColors.primary : theme.colorScheme.outline.withValues(alpha: 0.12),
                                       ),
                                     ),
                                     child: Text(
                                       label,
-                                      style: AppTypography.labelSmall.copyWith(
+                                      style: TextStyle(
+                                        fontSize: 11.5,
                                         color: isActive ? Colors.white : theme.colorScheme.onSurfaceVariant,
+                                        fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
                                       ),
                                     ),
                                   ),
@@ -221,12 +472,12 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                             }),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 10),
                       ]),
                     ),
                   ),
 
-                  // Transaction list
+                  // ── Transaction List ──
                   filteredTxAsync.when(
                     data: (allTxList) {
                       final hidden = ref.watch(hiddenItemsProvider);
@@ -257,28 +508,32 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Padding(
-                                    padding: const EdgeInsets.only(top: 8, bottom: 8),
+                                    padding: const EdgeInsets.only(top: 8, bottom: 6),
                                     child: Text(
                                       group.key,
-                                      style: AppTypography.labelMedium.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
                                     ),
                                   ),
-                                  ...group.value.asMap().entries.map((e) {
+                                  ...group.value.map((tx) {
                                     return _TransactionTile(
-                                      transaction: e.value,
+                                      transaction: tx,
                                       onDelete: () {
-                                        final itemKey = 'tx_${e.value.id}';
+                                        final itemKey = 'tx_${tx.id}';
                                         final db = ref.read(databaseProvider);
                                         final hiddenNotifier = ref.read(hiddenItemsProvider.notifier);
                                         final messenger = ScaffoldMessenger.of(context);
-                                        
+
                                         hiddenNotifier.update((state) => {...state, itemKey});
                                         messenger.clearSnackBars();
-                                        
+
                                         bool undone = false;
                                         final timer = Timer(const Duration(seconds: 3), () async {
                                           if (!undone) {
-                                            await db.deleteTransaction(e.value.id);
+                                            await db.deleteTransaction(tx.id);
                                             hiddenNotifier.update((state) {
                                               final s = {...state};
                                               s.remove(itemKey);
@@ -287,12 +542,12 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                                             ref.read(activityLogProvider.notifier).log(
                                               type: 'delete',
                                               entityType: 'transaction',
-                                              entityTitle: e.value.title,
+                                              entityTitle: tx.title,
                                             );
                                           }
                                           messenger.hideCurrentSnackBar();
                                         });
-                                        
+
                                         messenger.showSnackBar(
                                           SnackBar(
                                             content: const Text('Transaction deleted'),
@@ -313,10 +568,10 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                                           ),
                                         );
                                       },
-                                      onEdit: () => _showAddEditSheet(context, ref, transaction: e.value),
-                                    ).animate().fadeIn(delay: (50 * e.key).ms, duration: 300.ms);
+                                      onEdit: () => _showAddEditSheet(context, ref, transaction: tx),
+                                    );
                                   }),
-                                  if (index < groups.length - 1) const SizedBox(height: 8),
+                                  if (index < groups.length - 1) const SizedBox(height: 6),
                                 ],
                               );
                             },
@@ -335,8 +590,7 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.error_outline_rounded, size: 48,
-                                  color: Theme.of(context).colorScheme.error),
+                              Icon(Icons.error_outline_rounded, size: 40, color: theme.colorScheme.error),
                               const SizedBox(height: 12),
                               const Text('Could not load transactions'),
                             ],
@@ -346,18 +600,22 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                     ),
                   ),
 
-                  const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 90)),
                 ],
               ),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton.extended(
         heroTag: 'money_fab',
         onPressed: () => _showAddEditSheet(context, ref),
         backgroundColor: AppColors.primary,
-        child: const Icon(Icons.add_rounded, color: Colors.white),
+        icon: const Icon(Icons.add_rounded, color: Colors.white, size: 20),
+        label: const Text(
+          'New Transaction',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13.5),
+        ),
       ),
     );
   }
@@ -371,17 +629,23 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppColors.warning.withValues(alpha: 0.1),
+                color: AppColors.primary.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.account_balance_wallet_outlined, size: 48, color: AppColors.warning),
+              child: const Icon(Icons.account_balance_wallet_outlined, size: 44, color: AppColors.primary),
             ),
-            const SizedBox(height: 20),
-            Text('No transactions yet', style: AppTypography.headingSmall.copyWith(color: theme.colorScheme.onSurface)),
-            const SizedBox(height: 8),
-            Text('Tap + to add your first transaction', style: AppTypography.bodyMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            const SizedBox(height: 16),
+            Text(
+              'No transactions yet',
+              style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Tap New Transaction below to record income or expense',
+              style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
           ],
         ),
       ),
@@ -439,7 +703,8 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          TextButton(
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
             onPressed: () {
               final amount = double.tryParse(controller.text.trim());
               if (amount == null || amount <= 0) return;
@@ -461,20 +726,33 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
   }
 }
 
+// ────────────────── QUICK ACTIONS SECTION ──────────────────
+
 class _QuickActionsSection extends StatelessWidget {
+  final VoidCallback onWalletsTap;
   final VoidCallback onCalculatorTap;
   final VoidCallback onDebtToolsTap;
+  final VoidCallback onCategoryBudgetsTap;
 
   const _QuickActionsSection({
+    required this.onWalletsTap,
     required this.onCalculatorTap,
     required this.onDebtToolsTap,
+    required this.onCategoryBudgetsTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return AppCard(
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
       padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: theme.colorScheme.outline.withValues(alpha: isDark ? 0.14 : 0.08)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -483,8 +761,12 @@ class _QuickActionsSection extends StatelessWidget {
               Icon(Icons.bolt_rounded, size: 16, color: theme.colorScheme.primary),
               const SizedBox(width: 6),
               Text(
-                'Quick Actions',
-                style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface),
+                'Financial Tools',
+                style: AppTypography.labelLarge.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
               ),
             ],
           ),
@@ -493,21 +775,41 @@ class _QuickActionsSection extends StatelessWidget {
             children: [
               Expanded(
                 child: _QuickActionTile(
-                  label: 'Calculator',
-                  subtitle: 'Quick math',
-                  icon: Icons.calculate_rounded,
+                  label: 'Wallets',
+                  subtitle: 'Accounts',
+                  icon: Icons.account_balance_wallet_outlined,
                   iconColor: AppColors.primary,
-                  onTap: onCalculatorTap,
+                  onTap: onWalletsTap,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 6),
               Expanded(
                 child: _QuickActionTile(
-                  label: 'My Debts',
-                  subtitle: 'Manage debts',
+                  label: 'Debts',
+                  subtitle: 'Ledger',
                   icon: Icons.handshake_outlined,
                   iconColor: AppColors.warning,
                   onTap: onDebtToolsTap,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _QuickActionTile(
+                  label: 'Budgets',
+                  subtitle: 'Limits',
+                  icon: Icons.pie_chart_outline_rounded,
+                  iconColor: AppColors.teal,
+                  onTap: onCategoryBudgetsTap,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _QuickActionTile(
+                  label: 'Calc',
+                  subtitle: 'Math',
+                  icon: Icons.calculate_outlined,
+                  iconColor: AppColors.purple,
+                  onTap: onCalculatorTap,
                 ),
               ),
             ],
@@ -536,51 +838,514 @@ class _QuickActionTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: onTap,
-      child: Ink(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.7)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.25 : 0.35),
+            border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.1)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 16, color: iconColor),
               ),
-              child: Icon(icon, size: 18, color: iconColor),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: AppTypography.labelMedium.copyWith(color: theme.colorScheme.onSurface),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    subtitle,
-                    style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
+
+// ────────────────── BALANCE OVERVIEW HERO SECTION ──────────────────
+
+class _BalanceSection extends StatelessWidget {
+  final ({double income, double expense, double balance}) stats;
+  const _BalanceSection({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final isPositive = stats.balance >= 0;
+
+    return Column(
+      children: [
+        // ── Net Balance Hero Card ──
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isPositive
+                  ? AppColors.success.withValues(alpha: isDark ? 0.3 : 0.2)
+                  : AppColors.error.withValues(alpha: isDark ? 0.3 : 0.2),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: isDark ? Colors.black.withValues(alpha: 0.2) : Colors.black.withValues(alpha: 0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Text(
+                'Net Monthly Balance',
+                style: AppTypography.labelMedium.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.5,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${isPositive ? '+' : ''}$currencySymbol${_formatAmount(stats.balance)}',
+                style: TextStyle(
+                  fontSize: 30,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                  color: isPositive ? AppColors.success : AppColors.error,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // ── Income & Expense Dual Tiles ──
+        Row(
+          children: [
+            // Income Tile
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppColors.success.withValues(alpha: isDark ? 0.25 : 0.15),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.arrow_downward_rounded, size: 16, color: AppColors.success),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Income',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            '+$currencySymbol${_formatAmount(stats.income)}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.success,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+
+            // Expense Tile
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: AppColors.error.withValues(alpha: isDark ? 0.25 : 0.15),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: AppColors.error.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.arrow_upward_rounded, size: 16, color: AppColors.error),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Expense',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            '-$currencySymbol${_formatAmount(stats.expense)}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.error,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _formatAmount(double amount) {
+    if (amount.abs() >= 100000) {
+      return '${(amount / 1000).toStringAsFixed(1)}k';
+    }
+    return amount.toStringAsFixed(amount.truncateToDouble() == amount ? 0 : 2);
+  }
+}
+
+class _BalanceSkeleton extends StatelessWidget {
+  const _BalanceSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        children: [
+          Text('Balance', style: AppTypography.labelMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(height: 4),
+          Text('...', style: AppTypography.displayLarge.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
+}
+
+// ────────────────── BUDGET PROGRESS CARD ──────────────────
+
+class _BudgetProgressCard extends StatelessWidget {
+  final double progress;
+  final double spent;
+  final double budget;
+  final VoidCallback? onTap;
+
+  const _BudgetProgressCard({
+    required this.progress,
+    required this.spent,
+    required this.budget,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final isOverBudget = progress > 1.0;
+    final isWarning = progress > 0.8 && !isOverBudget;
+    final barColor = isOverBudget ? AppColors.error : isWarning ? AppColors.warning : AppColors.primary;
+    final remaining = budget - spent;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap?.call();
+        },
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: barColor.withValues(alpha: isDark ? 0.35 : 0.25)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.savings_outlined, size: 18, color: barColor),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Monthly Budget',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '$currencySymbol${budget.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  if (onTap != null) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.chevron_right_rounded, size: 16, color: theme.colorScheme.onSurfaceVariant),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: progress.clamp(0.0, 1.0),
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                  valueColor: AlwaysStoppedAnimation<Color>(barColor),
+                  minHeight: 6,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${(progress * 100).toStringAsFixed(0)}% used',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: barColor,
+                    ),
+                  ),
+                  Text(
+                    isOverBudget
+                        ? 'Over by $currencySymbol${(-remaining).toStringAsFixed(0)}'
+                        : '$currencySymbol${remaining.toStringAsFixed(0)} remaining',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      color: isOverBudget ? AppColors.error : theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ────────────────── TRANSACTION TILE (100% EMOJI-FREE) ──────────────────
+
+class _TransactionTile extends StatelessWidget {
+  final Transaction transaction;
+  final VoidCallback onDelete;
+  final VoidCallback onEdit;
+
+  const _TransactionTile({
+    required this.transaction,
+    required this.onDelete,
+    required this.onEdit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final isIncome = transaction.type == 'income';
+    final icon = categoryMaterialIcons[transaction.category] ?? Icons.category_outlined;
+    final accentColor = isIncome ? AppColors.success : AppColors.error;
+
+    return Dismissible(
+      key: ValueKey(transaction.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 18),
+        margin: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(
+          color: AppColors.error,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 20),
+      ),
+      onDismissed: (_) => onDelete(),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: theme.colorScheme.outline.withValues(alpha: isDark ? 0.12 : 0.07),
+          ),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              HapticFeedback.lightImpact();
+              onEdit();
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(
+                children: [
+                  // Outline Category Icon
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: accentColor.withValues(alpha: isDark ? 0.2 : 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Center(
+                      child: Icon(icon, size: 18, color: accentColor),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+
+                  // Title & Category / Details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          transaction.title,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: theme.colorScheme.onSurface,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Text(
+                              transaction.category,
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                            if (transaction.note != null && transaction.note!.isNotEmpty) ...[
+                              Text(' • ', style: TextStyle(fontSize: 10, color: theme.colorScheme.onSurfaceVariant)),
+                              Flexible(
+                                child: Text(
+                                  transaction.note!,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Amount
+                  Text(
+                    '${isIncome ? '+' : '-'}$currencySymbol${transaction.amount.toStringAsFixed(transaction.amount.truncateToDouble() == transaction.amount ? 0 : 2)}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: accentColor,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ────────────────── CALCULATOR DIALOG ──────────────────
 
 class _CalculatorDialog extends StatefulWidget {
   const _CalculatorDialog();
@@ -613,16 +1378,19 @@ class _CalculatorDialogState extends State<_CalculatorDialog> {
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.close_rounded),
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: () => Navigator.pop(context),
                   visualDensity: VisualDensity.compact,
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+
+            // Display
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
@@ -630,106 +1398,50 @@ class _CalculatorDialogState extends State<_CalculatorDialog> {
                 children: [
                   Text(
                     _expression.isEmpty ? '0' : _expression,
+                    style: AppTypography.bodySmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     _result,
+                    style: AppTypography.headingLarge.copyWith(
+                      color: theme.colorScheme.onSurface,
+                      fontWeight: FontWeight.bold,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppTypography.headingMedium.copyWith(color: theme.colorScheme.onSurface),
                   ),
                 ],
               ),
             ),
-            if (_history.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                constraints: const BoxConstraints(maxHeight: 110),
-                padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.6)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          'History',
-                          style: AppTypography.labelMedium.copyWith(color: theme.colorScheme.onSurface),
+            const SizedBox(height: 12),
+
+            // Keypad
+            ...[
+              ['C', '(', ')', '/'],
+              ['7', '8', '9', '*'],
+              ['4', '5', '6', '-'],
+              ['1', '2', '3', '+'],
+              ['0', '.', '⌫', '='],
+            ].map(
+              (row) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: row.map((k) {
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: _CalcButton(
+                          label: k,
+                          filled: k == '=',
+                          onTap: () => _onKey(k),
                         ),
-                        const Spacer(),
-                        GestureDetector(
-                          onTap: () => setState(_history.clear),
-                          child: Text(
-                            'Clear',
-                            style: AppTypography.labelSmall.copyWith(color: AppColors.error),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Expanded(
-                      child: ListView.separated(
-                        padding: EdgeInsets.zero,
-                        itemCount: _history.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 4),
-                        itemBuilder: (context, index) {
-                          final entry = _history[_history.length - 1 - index];
-                          return InkWell(
-                            onTap: () {
-                              final parts = entry.split('=');
-                              if (parts.length != 2) return;
-                              setState(() {
-                                _expression = parts.first.trim();
-                                _result = parts.last.trim();
-                              });
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: Text(
-                                entry,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                              ),
-                            ),
-                          );
-                        },
                       ),
-                    ),
-                  ],
+                    );
+                  }).toList(),
                 ),
               ),
-            ],
-            const SizedBox(height: 10),
-            _calcRow(['C', 'DEL', '/', '*']),
-            const SizedBox(height: 8),
-            _calcRow(['7', '8', '9', '-']),
-            const SizedBox(height: 8),
-            _calcRow(['4', '5', '6', '+']),
-            const SizedBox(height: 8),
-            _calcRow(['1', '2', '3', '=']),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(flex: 2, child: _CalcButton(label: '0', onTap: () => _onTap('0'))),
-                const SizedBox(width: 8),
-                Expanded(child: _CalcButton(label: '.', onTap: () => _onTap('.'))),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _CalcButton(
-                    label: 'DEL',
-                    onTap: () => _onTap('DEL'),
-                    filled: false,
-                  ),
-                ),
-              ],
             ),
           ],
         ),
@@ -737,122 +1449,74 @@ class _CalculatorDialogState extends State<_CalculatorDialog> {
     );
   }
 
-  Widget _calcRow(List<String> labels) {
-    return Row(
-      children: labels
-          .asMap()
-          .entries
-          .map(
-            (entry) => Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(right: entry.key == labels.length - 1 ? 0 : 8),
-                child: _CalcButton(
-                  label: entry.value,
-                  onTap: () => _onTap(entry.value),
-                  filled: entry.value == 'C',
-                ),
-              ),
-            ),
-          )
-          .toList(),
-    );
-  }
-
-  void _onTap(String value) {
+  void _onKey(String k) {
     setState(() {
-      if (value == 'C') {
+      if (k == 'C') {
         _expression = '';
         _result = '0';
-        return;
-      }
-
-      if (value == 'DEL') {
+      } else if (k == '⌫') {
         if (_expression.isNotEmpty) {
           _expression = _expression.substring(0, _expression.length - 1);
+          _evalLive();
         }
-        _result = _expression.isEmpty ? '0' : _result;
-        return;
-      }
-
-      if (value == '=') {
-        final originalExpression = _expression;
-        final computed = _tryEvaluate(_expression);
-        _result = computed ?? 'Error';
-        if (computed != null) {
-          final line = '$originalExpression = $computed';
-          if (originalExpression.isNotEmpty) {
-            _history.remove(line);
-            _history.add(line);
-            if (_history.length > 8) {
-              _history.removeAt(0);
-            }
-          }
-          _expression = computed;
-        }
-        return;
-      }
-
-      final operators = {'+', '-', '*', '/'};
-      if (operators.contains(value)) {
-        if (_expression.isEmpty && value != '-') return;
-        if (_expression.isNotEmpty && operators.contains(_expression[_expression.length - 1])) {
-          _expression = _expression.substring(0, _expression.length - 1) + value;
-        } else {
-          _expression += value;
-        }
+      } else if (k == '=') {
+        _evalFinal();
       } else {
-        _expression += value;
-      }
-
-      final preview = _tryEvaluate(_expression);
-      if (preview != null) {
-        _result = preview;
+        _expression += k;
+        _evalLive();
       }
     });
   }
 
-  String? _tryEvaluate(String expression) {
-    if (expression.trim().isEmpty) return '0';
-    final normalized = expression;
-    final tokens = _tokenize(normalized);
-    if (tokens.isEmpty) return null;
-    final postfix = _toPostfix(tokens);
-    if (postfix.isEmpty) return null;
-    final value = _evalPostfix(postfix);
-    if (value == null || value.isNaN || value.isInfinite) return null;
-    if ((value - value.roundToDouble()).abs() < 0.0000001) {
-      return value.round().toString();
+  void _evalLive() {
+    if (_expression.isEmpty) {
+      _result = '0';
+      return;
     }
-    return value.toStringAsFixed(6).replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+    final r = _calculate(_expression);
+    if (r != null) {
+      _result = r.toStringAsFixed(r.truncateToDouble() == r ? 0 : 2);
+    }
   }
 
-  List<String> _tokenize(String input) {
-    final out = <String>[];
-    final number = StringBuffer();
-    final operators = {'+', '-', '*', '/'};
+  void _evalFinal() {
+    final r = _calculate(_expression);
+    if (r != null) {
+      final res = r.toStringAsFixed(r.truncateToDouble() == r ? 0 : 2);
+      _history.insert(0, '$_expression = $res');
+      _expression = res;
+      _result = res;
+    }
+  }
 
-    for (int i = 0; i < input.length; i++) {
-      final ch = input[i];
-      final prev = i > 0 ? input[i - 1] : '';
-      final isUnaryMinus = ch == '-' && (i == 0 || operators.contains(prev));
+  double? _calculate(String exp) {
+    try {
+      final tokens = _tokenize(exp);
+      if (tokens.isEmpty) return null;
+      final postfix = _toPostfix(tokens);
+      return _evalPostfix(postfix);
+    } catch (_) {
+      return null;
+    }
+  }
 
-      if ((ch.codeUnitAt(0) >= 48 && ch.codeUnitAt(0) <= 57) || ch == '.' || isUnaryMinus) {
-        number.write(ch);
-      } else if (operators.contains(ch)) {
-        if (number.isNotEmpty) {
-          out.add(number.toString());
-          number.clear();
+  List<String> _tokenize(String exp) {
+    final tokens = <String>[];
+    var buf = '';
+    for (int i = 0; i < exp.length; i++) {
+      final ch = exp[i];
+      if ('0123456789.'.contains(ch)) {
+        buf += ch;
+      } else if ('+-*/()'.contains(ch)) {
+        if (buf.isNotEmpty) {
+          tokens.add(buf);
+          buf = '';
         }
-        out.add(ch);
-      } else {
-        return <String>[];
+        tokens.add(ch);
       }
     }
-
-    if (number.isNotEmpty) {
-      out.add(number.toString());
-    }
-    return out;
+    if (buf.isNotEmpty) tokens.add(buf);
+    return tokens;
   }
 
   List<String> _toPostfix(List<String> tokens) {
@@ -934,7 +1598,7 @@ class _CalcButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           color: filled ? AppColors.primary : theme.colorScheme.surface,
           border: Border.all(
-            color: filled ? AppColors.primary : theme.colorScheme.outline,
+            color: filled ? AppColors.primary : theme.colorScheme.outline.withValues(alpha: 0.2),
           ),
         ),
         child: Center(
@@ -943,281 +1607,6 @@ class _CalcButton extends StatelessWidget {
             style: AppTypography.labelLarge.copyWith(
               color: filled ? Colors.white : theme.colorScheme.onSurface,
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ==================== BALANCE SECTION ====================
-class _BalanceSection extends StatelessWidget {
-  final ({double income, double expense, double balance}) stats;
-  const _BalanceSection({required this.stats});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Column(
-      children: [
-        // Total balance
-        AppCard(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Text('Balance', style: AppTypography.labelMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-              const SizedBox(height: 4),
-              Text(
-                '$currencySymbol${_formatAmount(stats.balance)}',
-                style: AppTypography.displayLarge.copyWith(
-                  color: stats.balance >= 0 ? AppColors.success : AppColors.error,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-        ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.05),
-        const SizedBox(height: 12),
-        // Income & Expense row
-        Row(
-          children: [
-            Expanded(
-              child: AppCard(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.success.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-                      ),
-                      child: const Icon(Icons.arrow_downward_rounded, size: 18, color: AppColors.success),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Income', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                          Text(
-                            '$currencySymbol${_formatAmount(stats.income)}',
-                            style: AppTypography.labelLarge.copyWith(color: AppColors.success),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ).animate().fadeIn(delay: 200.ms, duration: 400.ms).slideX(begin: -0.05),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: AppCard(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.error.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(AppDimensions.radiusSm),
-                      ),
-                      child: const Icon(Icons.arrow_upward_rounded, size: 18, color: AppColors.error),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Expense', style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                          Text(
-                            '$currencySymbol${_formatAmount(stats.expense)}',
-                            style: AppTypography.labelLarge.copyWith(color: AppColors.error),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ).animate().fadeIn(delay: 300.ms, duration: 400.ms).slideX(begin: 0.05),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  String _formatAmount(double amount) {
-    if (amount.abs() >= 100000) {
-      return '${(amount / 1000).toStringAsFixed(1)}k';
-    }
-    return amount.toStringAsFixed(amount.truncateToDouble() == amount ? 0 : 2);
-  }
-}
-
-class _BalanceSkeleton extends StatelessWidget {
-  const _BalanceSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return AppCard(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          Text('Balance', style: AppTypography.labelMedium.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          const SizedBox(height: 4),
-          Text('...', style: AppTypography.displayLarge.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-        ],
-      ),
-    );
-  }
-}
-
-// ==================== BUDGET PROGRESS ====================
-class _BudgetProgressCard extends StatelessWidget {
-  final double progress;
-  final double spent;
-  final double budget;
-  const _BudgetProgressCard({required this.progress, required this.spent, required this.budget});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isOverBudget = progress > 1.0;
-    final isWarning = progress > 0.8 && !isOverBudget;
-    final barColor = isOverBudget ? AppColors.error : isWarning ? AppColors.warning : AppColors.success;
-    final remaining = budget - spent;
-
-    return AppCard(
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.savings_outlined, size: 18, color: barColor),
-              const SizedBox(width: 8),
-              Text('Monthly Budget', style: AppTypography.labelLarge.copyWith(color: theme.colorScheme.onSurface)),
-              const Spacer(),
-              Text(
-                '$currencySymbol${budget.toStringAsFixed(0)}',
-                style: AppTypography.labelMedium.copyWith(color: theme.colorScheme.onSurfaceVariant),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: progress.clamp(0.0, 1.0),
-              backgroundColor: theme.colorScheme.outline,
-              color: barColor,
-              minHeight: 8,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                '${(progress * 100).toStringAsFixed(0)}% used',
-                style: AppTypography.labelSmall.copyWith(color: barColor),
-              ),
-              Text(
-                isOverBudget
-                    ? 'Over by $currencySymbol${(-remaining).toStringAsFixed(0)}'
-                    : '$currencySymbol${remaining.toStringAsFixed(0)} remaining',
-                style: AppTypography.labelSmall.copyWith(
-                  color: isOverBudget ? AppColors.error : theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ==================== TRANSACTION TILE ====================
-class _TransactionTile extends StatelessWidget {
-  final Transaction transaction;
-  final VoidCallback onDelete;
-  final VoidCallback onEdit;
-  const _TransactionTile({required this.transaction, required this.onDelete, required this.onEdit});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isIncome = transaction.type == 'income';
-    final emoji = categoryIcons[transaction.category] ?? '📌';
-
-    return Dismissible(
-      key: ValueKey(transaction.id),
-      direction: DismissDirection.endToStart,
-      background: Container(
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 20),
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: AppColors.error,
-          borderRadius: BorderRadius.circular(AppDimensions.radiusLg),
-        ),
-        child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
-      ),
-      onDismissed: (_) => onDelete(),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: AppCard(
-          onTap: onEdit,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              // Emoji avatar
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: (isIncome ? AppColors.success : AppColors.error).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppDimensions.radiusMd),
-                ),
-                child: Center(
-                  child: Text(emoji, style: const TextStyle(fontSize: 20)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // Title & category
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      transaction.title,
-                      style: AppTypography.bodyLarge.copyWith(color: theme.colorScheme.onSurface),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      transaction.category,
-                      style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              // Amount
-              Text(
-                '${isIncome ? '+' : '-'}$currencySymbol${transaction.amount.toStringAsFixed(transaction.amount.truncateToDouble() == transaction.amount ? 0 : 2)}',
-                style: AppTypography.labelLarge.copyWith(
-                  color: isIncome ? AppColors.success : AppColors.error,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
           ),
         ),
       ),

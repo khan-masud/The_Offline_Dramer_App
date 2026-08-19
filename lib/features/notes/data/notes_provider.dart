@@ -34,3 +34,10 @@ final noteFoldersProvider = StreamProvider<List<String>>((ref) {
   final db = ref.watch(databaseProvider);
   return db.watchNoteFolders();
 });
+
+// Note versions list (revision history by noteId)
+final noteVersionsProvider = StreamProvider.family<List<NoteVersion>, int>((ref, noteId) {
+  final db = ref.watch(databaseProvider);
+  return db.watchNoteVersions(noteId);
+});
+
