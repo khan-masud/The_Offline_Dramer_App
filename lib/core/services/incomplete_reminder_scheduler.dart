@@ -12,9 +12,23 @@ class IncompleteReminderScheduler {
     required int intervalHours,
     required ReminderAlertMode alertMode,
   }) async {
-    final pendingTodos = await db.watchAllTodos(completed: false).first;
-    final pendingTodoCount = pendingTodos.length;
-    final pendingFollowUpItems = pendingTodos
+    final allPendingTodos = await db.watchAllTodos(completed: false).first;
+    final now = DateTime.now();
+
+    // Priority filter rule:
+    // - Priority > 0 (Low, Med, High): Always included in reminder notifications.
+    // - Priority == 0 (None):
+    //     - If no due date: Do NOT show in reminder notifications at all.
+    //     - If due date exists: Show ONLY starting from 24 hours before the due date (day before / within 24h).
+    final eligibleTodos = allPendingTodos.where((todo) {
+      if (todo.priority > 0) return true;
+      if (todo.dueDate == null) return false;
+      final threshold = todo.dueDate!.subtract(const Duration(hours: 24));
+      return now.isAfter(threshold) || now.isAtSameMomentAs(threshold);
+    }).toList();
+
+    final pendingTodoCount = eligibleTodos.length;
+    final pendingFollowUpItems = eligibleTodos
       .map((todo) => todo.title.trim())
       .where((title) => title.isNotEmpty)
       .toList();

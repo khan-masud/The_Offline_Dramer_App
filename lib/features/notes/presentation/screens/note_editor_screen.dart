@@ -11,6 +11,7 @@ import '../../../../core/theme/app_typography.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/providers/activity_log_provider.dart';
+import 'note_version_history_screen.dart';
 
 class NoteEditorScreen extends ConsumerStatefulWidget {
   final Note? note;
@@ -99,8 +100,19 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     final now = DateTime.now();
 
     if (isEditing) {
+      final original = widget.note!;
+      // Auto snapshot previous revision if title or content changed
+      if (original.title != finalTitle || original.content != content) {
+        await db.addNoteVersion(NoteVersionsCompanion(
+          noteId: Value(original.id),
+          title: Value(original.title),
+          content: Value(original.content),
+          createdAt: Value(original.updatedAt),
+        ));
+      }
+
       await db.updateNote(NotesCompanion(
-        id: Value(widget.note!.id),
+        id: Value(original.id),
         title: Value(finalTitle),
         content: Value(content),
         folder: Value(_folder),
@@ -303,18 +315,28 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   }
 
   Future<void> _showTextColorPicker() async {
-    const palette = <String>[
-      '#111111', '#D32F2F', '#1976D2', '#2E7D32', '#F57C00', '#6A1B9A', '#00838F', '#5D4037'
-    ];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final palette = isDark
+        ? <String>[
+            '#FFFFFF', '#FF8A80', '#82B1FF', '#B9F6CA', '#FFE57F', '#EA80FC', '#84FFFF', '#D7CCC8'
+          ]
+        : <String>[
+            '#111111', '#D32F2F', '#1976D2', '#2E7D32', '#F57C00', '#6A1B9A', '#00838F', '#5D4037'
+          ];
     final picked = await _pickColorHex(palette, title: 'Text Color');
     if (picked == null) return;
     _wrapSelectionWithTags('[color=$picked]', '[/color]');
   }
 
   Future<void> _showBackgroundColorPicker() async {
-    const palette = <String>[
-      '#FFF59D', '#FFCCBC', '#C8E6C9', '#B3E5FC', '#D1C4E9', '#F8BBD0', '#CFD8DC', '#FFE0B2'
-    ];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final palette = isDark
+        ? <String>[
+            '#5D4037', '#B71C1C', '#0D47A1', '#1B5E20', '#E65100', '#4A148C', '#006064', '#37474F'
+          ]
+        : <String>[
+            '#FFF59D', '#FFCCBC', '#C8E6C9', '#B3E5FC', '#D1C4E9', '#F8BBD0', '#CFD8DC', '#FFE0B2'
+          ];
     final picked = await _pickColorHex(palette, title: 'Highlight Color');
     if (picked == null) return;
     _wrapSelectionWithTags('[bg=$picked]', '[/bg]');
@@ -632,16 +654,26 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     );
   }
 
-  Color _getBackgroundColor() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colors = isDark ? _noteColorsDark : _noteColors;
-    return _colorIndex < colors.length ? colors[_colorIndex] : Theme.of(context).scaffoldBackgroundColor;
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bgColor = _getBackgroundColor();
+    final isDark = theme.brightness == Brightness.dark;
+    final colors = isDark ? _noteColorsDark : _noteColors;
+    final bgColor = _colorIndex < colors.length ? colors[_colorIndex] : Colors.transparent;
+    final isDefaultColor = bgColor == Colors.transparent;
+    final effectiveBg = isDefaultColor ? theme.scaffoldBackgroundColor : bgColor;
+
+    final textColor = isDefaultColor
+        ? theme.colorScheme.onSurface
+        : (isDark ? Colors.white : const Color(0xFF1E2430));
+
+    final hintColor = isDefaultColor
+        ? theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6)
+        : (isDark ? Colors.white.withValues(alpha: 0.45) : const Color(0xFF1E2430).withValues(alpha: 0.45));
+
+    final subtextColor = isDefaultColor
+        ? theme.colorScheme.onSurfaceVariant
+        : (isDark ? Colors.white70 : const Color(0xFF1E2430).withValues(alpha: 0.7));
 
     return PopScope(
       canPop: true,
@@ -651,18 +683,32 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: bgColor,
+        backgroundColor: effectiveBg,
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
           leading: IconButton(
-            icon: Icon(Icons.arrow_back_rounded, color: theme.colorScheme.onSurface),
+            icon: Icon(Icons.arrow_back_rounded, color: textColor),
             onPressed: () => Navigator.pop(context),
           ),
           actions: [
+            if (isEditing)
+              IconButton(
+                icon: Icon(Icons.history_rounded, color: textColor),
+                tooltip: 'Version history',
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => NoteVersionHistoryScreen(note: widget.note!),
+                    ),
+                  );
+                },
+              ),
             IconButton(
-              icon: Icon(_isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
-                  color: _isPinned ? theme.colorScheme.onSurface : theme.colorScheme.onSurfaceVariant),
+              icon: Icon(
+                _isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                color: _isPinned ? theme.colorScheme.primary : textColor,
+              ),
               onPressed: () => setState(() { _isPinned = !_isPinned; _hasChanges = true; }),
             ),
           ],
@@ -672,88 +718,91 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOut,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: _titleFocus.hasFocus
-                              ? AppColors.primary.withValues(alpha: 0.6)
-                              : theme.colorScheme.outline.withValues(alpha: 0.25),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.03),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
+                    TextField(
+                      controller: _titleCtrl,
+                      focusNode: _titleFocus,
+                      cursorColor: theme.colorScheme.primary,
+                      style: AppTypography.noteTitle.copyWith(
+                        color: textColor,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
                       ),
-                      child: TextField(
-                        controller: _titleCtrl,
-                        focusNode: _titleFocus,
-                        style: AppTypography.noteTitle.copyWith(color: Colors.black87),
-                        decoration: InputDecoration(
-                          hintText: 'Title',
-                          hintStyle: AppTypography.noteTitle.copyWith(color: Colors.black45),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                          isDense: true,
+                      decoration: InputDecoration(
+                        hintText: 'Title',
+                        hintStyle: AppTypography.noteTitle.copyWith(
+                          color: hintColor,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                          height: 1.3,
                         ),
-                        maxLines: null,
-                        textCapitalization: TextCapitalization.sentences,
+                        filled: false,
+                        fillColor: Colors.transparent,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                        isDense: true,
                       ),
+                      maxLines: null,
+                      textCapitalization: TextCapitalization.sentences,
                     ),
-                    const SizedBox(height: 12),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOut,
-                      constraints: const BoxConstraints(minHeight: 340),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        border: Border.all(
-                          color: _contentFocus.hasFocus
-                              ? AppColors.primary.withValues(alpha: 0.6)
-                              : theme.colorScheme.outline.withValues(alpha: 0.25),
+                    if (_folder != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: isDefaultColor
+                              ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
+                              : (isDark ? Colors.white.withValues(alpha: 0.15) : Colors.black.withValues(alpha: 0.08)),
+                          borderRadius: BorderRadius.circular(99),
                         ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 14,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.folder_outlined, size: 13, color: subtextColor),
+                            const SizedBox(width: 4),
+                            Text(
+                              _folder!,
+                              style: AppTypography.labelSmall.copyWith(color: subtextColor),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: TextField(
-                        controller: _contentCtrl,
-                        focusNode: _contentFocus,
-                        autofocus: !isEditing,
-                        style: AppTypography.noteContent.copyWith(
-                          color: Colors.black87,
-                          height: 1.55,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Write your note...',
-                          hintStyle: AppTypography.noteContent.copyWith(color: Colors.black45),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                        maxLines: null,
-                        textCapitalization: TextCapitalization.sentences,
+                    ],
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _contentCtrl,
+                      focusNode: _contentFocus,
+                      autofocus: !isEditing,
+                      cursorColor: theme.colorScheme.primary,
+                      style: AppTypography.noteContent.copyWith(
+                        color: textColor,
+                        fontSize: 16,
+                        height: 1.6,
                       ),
+                      decoration: InputDecoration(
+                        hintText: 'Write your note...',
+                        hintStyle: AppTypography.noteContent.copyWith(
+                          color: hintColor,
+                          fontSize: 16,
+                          height: 1.6,
+                        ),
+                        filled: false,
+                        fillColor: Colors.transparent,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      maxLines: null,
+                      textCapitalization: TextCapitalization.sentences,
                     ),
                   ],
                 ),
@@ -762,139 +811,154 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             // Bottom Toolbar (Google Keep style)
             Container(
               decoration: BoxDecoration(
-                color: theme.scaffoldBackgroundColor,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                color: isDefaultColor
+                    ? theme.scaffoldBackgroundColor
+                    : effectiveBg,
+                border: Border(
+                  top: BorderSide(
+                    color: isDefaultColor
+                        ? theme.colorScheme.outline.withValues(alpha: 0.15)
+                        : (isDark ? Colors.white.withValues(alpha: 0.12) : Colors.black.withValues(alpha: 0.08)),
+                    width: 1,
+                  ),
+                ),
                 boxShadow: [
-                  BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 14, offset: const Offset(0, -3))
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  )
                 ],
               ),
               child: SafeArea(
                 top: false,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
-                    children: [
-                      // Add formatting
-                      IconButton(
-                        icon: const Icon(Icons.add_circle_outline_rounded),
-                        tooltip: 'Add block',
-                        onPressed: _showBlockPicker,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.check_box_outlined),
-                        tooltip: 'Checkbox',
-                        onPressed: () => _toggleLinePrefix('- [ ] '),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.task_alt_rounded),
-                        tooltip: 'Toggle checked state',
-                        onPressed: _toggleChecklistStateOnCurrentLine,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.format_list_bulleted_rounded),
-                        tooltip: 'Bullet List',
-                        onPressed: () => _toggleLinePrefix('- '),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.format_list_numbered_rounded),
-                        tooltip: 'Numbered List',
-                        onPressed: _insertNumberedList,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.format_bold_rounded),
-                        tooltip: 'Bold',
-                        onPressed: () => _toggleWrap('**'),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.format_italic_rounded),
-                        tooltip: 'Italic',
-                        onPressed: () => _toggleWrap('*'),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.format_strikethrough_rounded),
-                        tooltip: 'Strikethrough',
-                        onPressed: () => _toggleWrap('~~'),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.title_rounded),
-                        tooltip: 'Heading 1',
-                        onPressed: () => _insertHeading(1),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.format_quote_rounded),
-                        tooltip: 'Quote',
-                        onPressed: _insertQuote,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.horizontal_rule_rounded),
-                        tooltip: 'Divider',
-                        onPressed: _insertHorizontalRule,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.link_rounded),
-                        tooltip: 'Insert URL',
-                        onPressed: _insertLink,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.format_color_text_rounded),
-                        tooltip: 'Text color',
-                        onPressed: _showTextColorPicker,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.format_color_fill_rounded),
-                        tooltip: 'Text background',
-                        onPressed: _showBackgroundColorPicker,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.code_rounded),
-                        tooltip: 'Code block',
-                        onPressed: _insertCodeBlock,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.code_off_rounded),
-                        tooltip: 'Inline code',
-                        onPressed: _insertInlineCode,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.expand_rounded),
-                        tooltip: 'Toggle list',
-                        onPressed: _insertToggleList,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.table_chart_outlined),
-                        tooltip: 'Table',
-                        onPressed: _insertTable,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.image_outlined),
-                        tooltip: 'Image',
-                        onPressed: _insertImage,
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.palette_outlined),
-                        tooltip: 'Color',
-                        onPressed: _showColorPicker,
-                      ),
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(999),
+                      children: [
+                        // Add formatting
+                        IconButton(
+                          icon: Icon(Icons.add_circle_outline_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Add block',
+                          onPressed: _showBlockPicker,
                         ),
-                        child: Text(
-                          _folder ?? 'No folder',
-                          style: AppTypography.labelSmall.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        IconButton(
+                          icon: Icon(Icons.check_box_outlined, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Checkbox',
+                          onPressed: () => _toggleLinePrefix('- [ ] '),
                         ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.folder_outlined),
-                        tooltip: 'Folder',
-                        onPressed: _showFolderPicker,
-                      ),
-                    ],
+                        IconButton(
+                          icon: Icon(Icons.task_alt_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Toggle checked state',
+                          onPressed: _toggleChecklistStateOnCurrentLine,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.format_list_bulleted_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Bullet List',
+                          onPressed: () => _toggleLinePrefix('- '),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.format_list_numbered_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Numbered List',
+                          onPressed: _insertNumberedList,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.format_bold_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Bold',
+                          onPressed: () => _toggleWrap('**'),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.format_italic_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Italic',
+                          onPressed: () => _toggleWrap('*'),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.format_strikethrough_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Strikethrough',
+                          onPressed: () => _toggleWrap('~~'),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.title_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Heading 1',
+                          onPressed: () => _insertHeading(1),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.format_quote_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Quote',
+                          onPressed: _insertQuote,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.horizontal_rule_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Divider',
+                          onPressed: _insertHorizontalRule,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.link_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Insert URL',
+                          onPressed: _insertLink,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.format_color_text_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Text color',
+                          onPressed: _showTextColorPicker,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.format_color_fill_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Text background',
+                          onPressed: _showBackgroundColorPicker,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.code_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Code block',
+                          onPressed: _insertCodeBlock,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.code_off_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Inline code',
+                          onPressed: _insertInlineCode,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.expand_rounded, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Toggle list',
+                          onPressed: _insertToggleList,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.table_chart_outlined, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Table',
+                          onPressed: _insertTable,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.image_outlined, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Image',
+                          onPressed: _insertImage,
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.palette_outlined, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Color',
+                          onPressed: _showColorPicker,
+                        ),
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDefaultColor
+                                ? theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45)
+                                : (isDark ? Colors.white.withValues(alpha: 0.15) : Colors.black.withValues(alpha: 0.08)),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            _folder ?? 'No folder',
+                            style: AppTypography.labelSmall.copyWith(color: subtextColor),
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.folder_outlined, color: textColor.withValues(alpha: 0.85)),
+                          tooltip: 'Folder',
+                          onPressed: _showFolderPicker,
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -951,7 +1015,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                           ),
                         ),
                         child: isActive 
-                            ? Icon(Icons.check, size: 24, color: isDefault ? theme.colorScheme.onSurface : Colors.black87) 
+                            ? Icon(Icons.check, size: 24, color: isDefault ? theme.colorScheme.onSurface : (isDark ? Colors.white : Colors.black87)) 
                             : (isDefault ? Icon(Icons.format_color_reset_outlined, color: theme.colorScheme.onSurfaceVariant) : null),
                       ),
                     );

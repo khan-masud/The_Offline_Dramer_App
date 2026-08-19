@@ -90,7 +90,8 @@ class _PinSetupScreenState extends ConsumerState<PinSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final currentPin = _isConfirming ? _confirmPin : _pin;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       body: Container(
@@ -101,8 +102,8 @@ class _PinSetupScreenState extends ConsumerState<PinSetupScreen> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: isDark
-                ? [const Color(0xFF0F172A), const Color(0xFF1E293B), const Color(0xFF0F172A)]
-                : [const Color(0xFF1E3A5F), const Color(0xFF2563EB), const Color(0xFF1E3A5F)],
+                ? const [Color(0xFF090D16), Color(0xFF111827), Color(0xFF090D16)]
+                : const [Color(0xFFF8FAFC), Color(0xFFEEF2F7), Color(0xFFF1F5F9)],
           ),
         ),
         child: SafeArea(
@@ -113,25 +114,53 @@ class _PinSetupScreenState extends ConsumerState<PinSetupScreen> {
                 alignment: Alignment.centerLeft,
                 child: IconButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+                  icon: Icon(Icons.arrow_back_rounded, color: isDark ? Colors.white : theme.colorScheme.onSurface),
                 ),
               ),
               const Spacer(flex: 2),
-              Icon(
-                _isConfirming ? Icons.verified_user_outlined : Icons.lock_outline_rounded,
-                color: Colors.white, size: 48,
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [AppColors.primary, Color(0xFF6366F1)]),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: isDark ? 0.35 : 0.25),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  _isConfirming ? Icons.verified_user_outlined : Icons.lock_outline_rounded,
+                  color: Colors.white,
+                  size: 34,
+                ),
               ).animate().fadeIn(),
               const SizedBox(height: 24),
               Text(
                 _isConfirming ? 'Confirm Your PIN' : 'Create a PIN',
-                style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white),
+                style: GoogleFonts.inter(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : theme.colorScheme.onSurface,
+                ),
               ).animate().fadeIn(delay: 100.ms),
               const SizedBox(height: 8),
               Text(
-                _isError ? _errorText : (_isConfirming ? 'Re-enter your 4-digit PIN' : 'Set a 4-digit PIN to protect your data'),
-                style: GoogleFonts.inter(fontSize: 14, color: _isError ? AppColors.error : Colors.white.withValues(alpha: 0.6)),
+                _isError
+                    ? _errorText
+                    : (_isConfirming ? 'Re-enter your 4-digit PIN' : 'Set a 4-digit PIN to protect your data'),
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: _isError
+                      ? AppColors.error
+                      : (isDark ? Colors.white.withValues(alpha: 0.6) : theme.colorScheme.onSurfaceVariant),
+                ),
               ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 36),
               // PIN dots
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -144,8 +173,27 @@ class _PinSetupScreenState extends ConsumerState<PinSetupScreen> {
                     height: isActive ? 16 : 14,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: _isError ? AppColors.error : (isActive ? Colors.white : Colors.white.withValues(alpha: 0.15)),
-                      border: !isActive ? Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1.5) : null,
+                      color: _isError
+                          ? AppColors.error
+                          : (isActive
+                              ? AppColors.primary
+                              : (isDark ? Colors.white.withValues(alpha: 0.12) : theme.colorScheme.surfaceContainerHighest)),
+                      border: !isActive
+                          ? Border.all(
+                              color: isDark
+                                  ? Colors.white.withValues(alpha: 0.25)
+                                  : theme.colorScheme.outline.withValues(alpha: 0.4),
+                              width: 1.5,
+                            )
+                          : null,
+                      boxShadow: isActive
+                          ? [
+                              BoxShadow(
+                                color: (_isError ? AppColors.error : AppColors.primary).withValues(alpha: 0.4),
+                                blurRadius: 8,
+                              )
+                            ]
+                          : null,
                     ),
                   );
                 }),
@@ -159,7 +207,7 @@ class _PinSetupScreenState extends ConsumerState<PinSetupScreen> {
                     for (var row in [[1, 2, 3], [4, 5, 6], [7, 8, 9]]) ...[
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: row.map((n) => _buildKey(n)).toList(),
+                        children: row.map((n) => _buildKey(n, isDark, theme)).toList(),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -167,13 +215,19 @@ class _PinSetupScreenState extends ConsumerState<PinSetupScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         const SizedBox(width: 72, height: 72),
-                        _buildKey(0),
+                        _buildKey(0, isDark, theme),
                         SizedBox(
                           width: 72,
                           height: 72,
                           child: GestureDetector(
                             onTap: _onDelete,
-                            child: Center(child: Icon(Icons.backspace_outlined, color: Colors.white.withValues(alpha: 0.7), size: 24)),
+                            child: Center(
+                              child: Icon(
+                                Icons.backspace_outlined,
+                                color: isDark ? Colors.white.withValues(alpha: 0.75) : theme.colorScheme.onSurfaceVariant,
+                                size: 24,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -190,7 +244,7 @@ class _PinSetupScreenState extends ConsumerState<PinSetupScreen> {
     );
   }
 
-  Widget _buildKey(int number) {
+  Widget _buildKey(int number, bool isDark, ThemeData theme) {
     return GestureDetector(
       onTap: () => _onNumberTap(number),
       child: Container(
@@ -198,11 +252,30 @@ class _PinSetupScreenState extends ConsumerState<PinSetupScreen> {
         height: 72,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: 0.08),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1),
+          color: isDark ? Colors.white.withValues(alpha: 0.07) : theme.colorScheme.surface,
+          border: Border.all(
+            color: isDark ? Colors.white.withValues(alpha: 0.12) : theme.colorScheme.outline.withValues(alpha: 0.25),
+            width: 1,
+          ),
+          boxShadow: !isDark
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
         ),
         child: Center(
-          child: Text(number.toString(), style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.w500, color: Colors.white)),
+          child: Text(
+            number.toString(),
+            style: GoogleFonts.inter(
+              fontSize: 28,
+              fontWeight: FontWeight.w500,
+              color: isDark ? Colors.white : theme.colorScheme.onSurface,
+            ),
+          ),
         ),
       ),
     );

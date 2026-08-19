@@ -34,6 +34,7 @@ class NotificationService {
   static const _incompleteFollowUpBaseId = 710000;
   static const _maxIncompleteFollowUpsPerDay = 24;
   static const _birthdayBaseId = 800000;
+  static const _debtBaseId = 900000;
   static const _channelVersion = 2;
 
   Future<void> init() async {
@@ -134,10 +135,43 @@ class NotificationService {
     required String title,
     required String body,
     required DateTime scheduledDate,
+    int priority = 0,
+    DateTime? dueDate,
     ReminderAlertMode alertMode = ReminderAlertMode.ringAndVibration,
   }) async {
     if (kIsWeb || !_isInitialized) return;
     await cancelReminder(id);
+
+    // Rule for None priority (priority <= 0):
+    // 1. If no due date -> do not schedule any reminder notification.
+    // 2. If due date exists -> only schedule if within 24 hours before due date (or later).
+    if (priority <= 0) {
+      if (dueDate == null) return;
+      final windowStart = dueDate.subtract(const Duration(hours: 24));
+      if (scheduledDate.isBefore(windowStart)) return;
+    }
+
+    try {
+      final tzScheduled = tz.TZDateTime.from(scheduledDate, tz.local);
+      if (!tzScheduled.isAfter(tz.TZDateTime.now(tz.local))) return;
+
+      await _notificationsPlugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: tzScheduled,
+        notificationDetails: _buildDetails(
+          channelBaseId: 'todo_reminders',
+          channelBaseName: 'Todo Reminders',
+          channelDescription: 'Reminders for scheduled tasks',
+          alertMode: alertMode,
+          expandedText: body,
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+    } catch (e) {
+      debugPrint('Todo reminder schedule error: $e');
+    }
   }
 
   Future<void> scheduleRoutineReminder({
@@ -212,77 +246,10 @@ class NotificationService {
     }
   }
 
-  Future<void> _scheduleDailyDigestNotification({
-    required int notificationId,
-    required TimeOfDay time,
-    required String title,
-    required String body,
-    required String channelBaseId,
-    required String channelBaseName,
-    required String channelDescription,
-    required ReminderAlertMode alertMode,
-  }) async {
-    final now = tz.TZDateTime.now(tz.local);
-    var scheduled =
-        tz.TZDateTime(tz.local, now.year, now.month, now.day, time.hour, time.minute);
-    if (!scheduled.isAfter(now)) {
-      scheduled = scheduled.add(const Duration(days: 1));
-    }
-
-    try {
-      await _notificationsPlugin.zonedSchedule(
-        id: notificationId,
-        title: title,
-        body: body,
-        scheduledDate: scheduled,
-        notificationDetails: _buildDetails(
-          channelBaseId: channelBaseId,
-          channelBaseName: channelBaseName,
-          channelDescription: channelDescription,
-          alertMode: alertMode,
-          expandedText: body,
-        ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.time,
-      );
-    } catch (e) {
-      debugPrint('Daily digest schedule error: $e');
-    }
-  }
-
   String _sanitizeNotificationName(String raw) {
     final normalized = raw.trim();
     if (normalized.isEmpty) return 'Me++';
     return normalized;
-  }
-
-  String _buildDigestBody({
-    required String heading,
-    required List<String> tasks,
-  }) {
-    final normalizedTasks = tasks
-        .map((task) => task.trim())
-        .where((task) => task.isNotEmpty)
-        .toList();
-
-    if (normalizedTasks.isEmpty) {
-      return '$heading\nNo pending tasks for now.';
-    }
-
-    const maxVisibleItems = 18;
-    final visible = normalizedTasks.take(maxVisibleItems).toList();
-    final hiddenCount = normalizedTasks.length - visible.length;
-
-    final buffer = StringBuffer('$heading\n');
-    for (int i = 0; i < visible.length; i++) {
-      buffer.writeln('${i + 1}. ${visible[i]}');
-    }
-
-    if (hiddenCount > 0) {
-      buffer.write('+ $hiddenCount more item(s)...');
-    }
-
-    return buffer.toString().trimRight();
   }
 
   Future<void> scheduleIncompleteWorkFollowUpReminders({
@@ -617,15 +584,7 @@ class NotificationService {
     }
   }
 
-  tz.TZDateTime _nextInstanceOfDayAt(int dayOfWeek, int hour, int minute) {
-    tz.TZDateTime now = tz.TZDateTime.now(tz.local);
-    tz.TZDateTime scheduledDate = tz.TZDateTime(tz.local, now.year, now.month, now.day, hour, minute, 0);
 
-    while (scheduledDate.weekday != dayOfWeek || scheduledDate.isBefore(now)) {
-      scheduledDate = scheduledDate.add(const Duration(days: 1));
-    }
-    return scheduledDate;
-  }
 
   NotificationDetails _buildDetails({
     required String channelBaseId,
@@ -686,34 +645,7 @@ class NotificationService {
     return 'Good Night';
   }
 
-  String _buildPendingTaskNoticeBody(String taskName) {
-    final normalizedTask = taskName.trim().isEmpty ? 'Task' : taskName.trim();
-    return 'You have a pending task: $normalizedTask\n';
-  }
 
-  String _deriveTaskName({
-    required String title,
-    required String body,
-  }) {
-    final trimmedTitle = title.trim();
-    final trimmedBody = body.trim();
-
-    for (final prefix in const <String>['Routine: ', 'Habit Reminder: ', 'Todo Reminder: ']) {
-      if (trimmedTitle.startsWith(prefix)) {
-        final extracted = trimmedTitle.substring(prefix.length).trim();
-        if (extracted.isNotEmpty) return extracted;
-      }
-    }
-
-    if (trimmedBody.isNotEmpty &&
-        !trimmedBody.toLowerCase().contains('time to') &&
-        !trimmedBody.toLowerCase().contains('track')) {
-      return trimmedBody;
-    }
-
-    if (trimmedTitle.isNotEmpty) return trimmedTitle;
-    return 'Task';
-  }
 
   String _modeLabel(ReminderAlertMode mode) {
     switch (mode) {
@@ -831,6 +763,8 @@ class NotificationService {
         title: 'Todo Reminder',
         body: todo.title,
         scheduledDate: todo.remindAt!,
+        priority: todo.priority,
+        dueDate: todo.dueDate,
         alertMode: alertMode,
       );
     }
@@ -871,13 +805,121 @@ class NotificationService {
     return TimeOfDay(hour: hour, minute: minute);
   }
 
-  int _routineNotificationId({
-    required int routineId,
-    required int reminderIndex,
-    required int dayOfWeek,
-  }) {
-    return (routineId * 10000) + (reminderIndex * 10) + dayOfWeek;
+  // === DEBT REMINDERS ===
+  Future<void> scheduleDebtDueReminder({
+    required int debtId,
+    required String personName,
+    required double amount,
+    required String type, // 'given' or 'taken'
+    required DateTime dueDate,
+    bool enableReminders = true,
+    TimeOfDay reminderTime = const TimeOfDay(hour: 9, minute: 0),
+    bool remindDayBefore = true,
+    ReminderAlertMode alertMode = ReminderAlertMode.ring,
+  }) async {
+    if (kIsWeb || !_isInitialized) return;
+
+    await cancelDebtReminders(debtId);
+    if (!enableReminders) return;
+
+    final now = tz.TZDateTime.now(tz.local);
+    final dueTz = tz.TZDateTime.from(dueDate, tz.local);
+
+    final isLent = type == 'given';
+    final actionText = isLent ? 'collect ৳${amount.toStringAsFixed(0)} from' : 'repay ৳${amount.toStringAsFixed(0)} to';
+
+    // 1. Day before reminder (at user configured time)
+    if (remindDayBefore) {
+      final dayBefore = tz.TZDateTime(
+        tz.local,
+        dueTz.year,
+        dueTz.month,
+        dueTz.day - 1,
+        reminderTime.hour,
+        reminderTime.minute,
+      );
+
+      if (dayBefore.isAfter(now)) {
+        await _notificationsPlugin.zonedSchedule(
+          id: _debtNotificationId(debtId, 1),
+          title: '💸 Debt Due Tomorrow',
+          body: 'Reminder to $actionText $personName tomorrow.',
+          scheduledDate: dayBefore,
+          notificationDetails: _buildDetails(
+            channelBaseId: 'debt_reminders',
+            channelBaseName: 'Debt Reminders',
+            channelDescription: 'Reminders for upcoming debt due dates',
+            alertMode: alertMode,
+            expandedText: 'Reminder to $actionText $personName tomorrow.',
+          ),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        );
+      }
+    }
+
+    // 2. On the due date (at user configured time)
+    final onDay = tz.TZDateTime(
+      tz.local,
+      dueTz.year,
+      dueTz.month,
+      dueTz.day,
+      reminderTime.hour,
+      reminderTime.minute,
+    );
+
+    if (onDay.isAfter(now)) {
+      await _notificationsPlugin.zonedSchedule(
+        id: _debtNotificationId(debtId, 2),
+        title: '🚨 Debt Due Today',
+        body: 'Today is the due date to $actionText $personName.',
+        scheduledDate: onDay,
+        notificationDetails: _buildDetails(
+          channelBaseId: 'debt_reminders',
+          channelBaseName: 'Debt Reminders',
+          channelDescription: 'Reminders for upcoming debt due dates',
+          alertMode: alertMode,
+          expandedText: 'Today is the due date to $actionText $personName.',
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+    }
   }
+
+  Future<void> rescheduleAllDebtReminders({
+    required List<Debt> debts,
+    required NotificationPreferencesState prefs,
+  }) async {
+    if (kIsWeb || !_isInitialized) return;
+
+    for (final debt in debts) {
+      await cancelDebtReminders(debt.id);
+      if (debt.isSettled || debt.dueDate == null || !prefs.enableDebtReminders) continue;
+
+      await scheduleDebtDueReminder(
+        debtId: debt.id,
+        personName: debt.personName,
+        amount: debt.amount - debt.paidAmount,
+        type: debt.type,
+        dueDate: debt.dueDate!,
+        enableReminders: prefs.enableDebtReminders,
+        reminderTime: prefs.debtReminderTime,
+        remindDayBefore: prefs.debtRemindDayBefore,
+        alertMode: prefs.alertMode,
+      );
+    }
+  }
+
+  Future<void> cancelDebtReminders(int debtId) async {
+    if (kIsWeb || !_isInitialized) return;
+    await _notificationsPlugin.cancel(id: _debtNotificationId(debtId, 1));
+    await _notificationsPlugin.cancel(id: _debtNotificationId(debtId, 2));
+  }
+
+  int _debtNotificationId(int debtId, int type) {
+    return _debtBaseId + (debtId * 10) + type;
+  }
+
+
 
   int _birthdayNotificationId(int birthdayId, int type) {
     return _birthdayBaseId + (birthdayId * 10) + type;

@@ -13,6 +13,7 @@ import '../../../../providers/theme_provider.dart';
 import '../../../../providers/auth_provider.dart';
 import '../../../../providers/profile_provider.dart';
 import '../../../../providers/notification_preferences_provider.dart';
+import '../../../../providers/dashboard_preferences_provider.dart';
 import '../../../../core/database/database_provider.dart';
 import '../../../../core/services/backup_service.dart';
 import '../../../../core/services/incomplete_reminder_scheduler.dart';
@@ -53,6 +54,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final authState = ref.watch(authProvider);
     final notificationPrefs = ref.watch(notificationPreferencesProvider);
     final weatherApiKeyAsync = ref.watch(weatherApiKeyProvider);
+    final dashboardPrefs = ref.watch(dashboardPreferencesProvider);
 
     final isDark = themeMode == ThemeMode.dark;
     final reminderTimeText = MaterialLocalizations.of(context).formatTimeOfDay(
@@ -61,6 +63,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     final birthdayTimeText = MaterialLocalizations.of(context).formatTimeOfDay(
       notificationPrefs.birthdayReminderTime,
+      alwaysUse24HourFormat: MediaQuery.of(context).alwaysUse24HourFormat,
+    );
+    final debtReminderTimeText = MaterialLocalizations.of(context).formatTimeOfDay(
+      notificationPrefs.debtReminderTime,
       alwaysUse24HourFormat: MediaQuery.of(context).alwaysUse24HourFormat,
     );
     final incompleteIntervalText = _incompleteIntervalLabel(
@@ -99,6 +105,52 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 value: isDark,
                 onChanged: (_) => ref.read(themeModeProvider.notifier).toggle(),
               ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Dashboard Display Customization
+          _sectionLabel(context, 'Dashboard Display', Icons.dashboard_customize_outlined),
+          AppCard(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                _tile(
+                  context: context,
+                  icon: Icons.format_quote_rounded,
+                  iconColor: AppColors.orange,
+                  title: 'Daily Motivation',
+                  subtitle: 'Show daily inspirational quotes',
+                  trailing: Switch(
+                    value: dashboardPrefs.showDailyMotivation,
+                    onChanged: (v) => ref.read(dashboardPreferencesProvider.notifier).toggleMotivation(v),
+                  ),
+                ),
+                _divider(theme),
+                _tile(
+                  context: context,
+                  icon: Icons.history_edu_rounded,
+                  iconColor: AppColors.primary,
+                  title: 'Daily Events',
+                  subtitle: 'Show today in history & historical echoes',
+                  trailing: Switch(
+                    value: dashboardPrefs.showDailyEvents,
+                    onChanged: (v) => ref.read(dashboardPreferencesProvider.notifier).toggleEvents(v),
+                  ),
+                ),
+                _divider(theme),
+                _tile(
+                  context: context,
+                  icon: Icons.wb_sunny_outlined,
+                  iconColor: AppColors.teal,
+                  title: 'Weather Widget',
+                  subtitle: 'Show live weather & forecast on dashboard',
+                  trailing: Switch(
+                    value: dashboardPrefs.showWeather,
+                    onChanged: (v) => ref.read(dashboardPreferencesProvider.notifier).toggleWeather(v),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
@@ -190,6 +242,56 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
                   onTap: () => _pickBirthdayReminderTime(context),
                 ),
+                _divider(theme),
+                _tile(
+                  context: context,
+                  icon: Icons.account_balance_wallet_outlined,
+                  iconColor: AppColors.error,
+                  title: 'Debt Due Date Reminders',
+                  subtitle: 'Alarms & notifications for upcoming debts',
+                  trailing: Switch(
+                    value: notificationPrefs.enableDebtReminders,
+                    onChanged: (v) async {
+                      await ref.read(notificationPreferencesProvider.notifier).setEnableDebtReminders(v);
+                      final debts = await ref.read(databaseProvider).getAllDebts();
+                      await ref.read(notificationServiceProvider).rescheduleAllDebtReminders(
+                        debts: debts,
+                        prefs: ref.read(notificationPreferencesProvider),
+                      );
+                    },
+                  ),
+                ),
+                if (notificationPrefs.enableDebtReminders) ...[
+                  _divider(theme),
+                  _tile(
+                    context: context,
+                    icon: Icons.access_time_rounded,
+                    iconColor: AppColors.error,
+                    title: 'Debt Reminder Time',
+                    subtitle: debtReminderTimeText,
+                    trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: theme.colorScheme.onSurfaceVariant),
+                    onTap: () => _pickDebtReminderTime(context),
+                  ),
+                  _divider(theme),
+                  _tile(
+                    context: context,
+                    icon: Icons.event_available_outlined,
+                    iconColor: AppColors.warning,
+                    title: 'Remind 1 Day Before',
+                    subtitle: 'Send an advance reminder 24 hours prior',
+                    trailing: Switch(
+                      value: notificationPrefs.debtRemindDayBefore,
+                      onChanged: (v) async {
+                        await ref.read(notificationPreferencesProvider.notifier).setDebtRemindDayBefore(v);
+                        final debts = await ref.read(databaseProvider).getAllDebts();
+                        await ref.read(notificationServiceProvider).rescheduleAllDebtReminders(
+                          debts: debts,
+                          prefs: ref.read(notificationPreferencesProvider),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -651,6 +753,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         alertMode: ref.read(notificationPreferencesProvider).alertMode,
         hour: time.hour,
         minute: time.minute,
+      );
+    }
+  }
+
+  Future<void> _pickDebtReminderTime(BuildContext context) async {
+    final prefs = ref.read(notificationPreferencesProvider);
+    final time = await showTimePicker(context: context, initialTime: prefs.debtReminderTime);
+    if (time != null) {
+      await ref.read(notificationPreferencesProvider.notifier).setDebtReminderTime(time);
+      final debts = await ref.read(databaseProvider).getAllDebts();
+      await ref.read(notificationServiceProvider).rescheduleAllDebtReminders(
+        debts: debts,
+        prefs: ref.read(notificationPreferencesProvider),
       );
     }
   }

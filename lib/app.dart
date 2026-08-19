@@ -14,6 +14,7 @@ import 'features/calendar/presentation/screens/calendar_screen.dart';
 import 'features/money/presentation/screens/debts_screen.dart';
 import 'features/birthday/presentation/screens/birthday_calendar_screen.dart';
 import 'features/contacts/presentation/screens/contact_list_screen.dart';
+import 'features/diary/presentation/screens/diary_screen.dart';
 import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
 
@@ -26,6 +27,7 @@ import 'core/theme/app_dimensions.dart';
 import 'main.dart';
 import 'core/services/share_intent_service.dart';
 import 'features/links/data/links_provider.dart';
+import 'features/links/data/link_metadata_service.dart';
 
 /// Navigator observer that logs screen views to Firebase Analytics.
 class _AnalyticsNavigatorObserver extends NavigatorObserver {
@@ -114,6 +116,7 @@ class _TODAppState extends ConsumerState<TODApp> {
         '/debts': (context) => const DebtsScreen(),
         '/birthdays': (context) => const BirthdayCalendarScreen(),
         '/contacts': (context) => const ContactListScreen(),
+        '/diary': (context) => const DiaryScreen(),
       },
     );
   }
@@ -148,10 +151,10 @@ class _QuickSaveSheetState extends ConsumerState<_QuickSaveSheet> {
     final url = widget.url;
     if (url.isEmpty) return;
     setState(() => _isFetchingTitle = true);
-    final title = await fetchUrlTitle(url);
-    if (title != null && mounted && _titleCtrl.text.isEmpty) {
+    final meta = await LinkMetadataService.fetchMetadata(url);
+    if (mounted && _titleCtrl.text.isEmpty && meta.title.isNotEmpty) {
       setState(() {
-        _titleCtrl.text = title;
+        _titleCtrl.text = meta.title;
         _isFetchingTitle = false;
       });
     } else if (mounted) {

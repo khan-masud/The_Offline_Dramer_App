@@ -13,7 +13,6 @@ import 'package:intl/intl.dart';
 import 'package:markdown/markdown.dart' as md;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -25,7 +24,9 @@ import '../../../../core/services/pdf_file_saver.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
 import '../../data/notes_provider.dart';
+import '../../services/note_pdf_service.dart';
 import 'note_editor_screen.dart';
+import 'note_version_history_screen.dart';
 
 const _noteColors = [
   Colors.transparent,
@@ -59,6 +60,7 @@ const _noteColorsDark = [
 
 enum _PreviewMenuAction {
   exportPdf,
+  versionHistory,
 }
 
 class _HeadingItem {
@@ -210,6 +212,17 @@ class _NotePreviewScreenState extends ConsumerState<NotePreviewScreen> {
         elevation: 0,
         actions: [
           IconButton(
+            icon: const Icon(Icons.history_rounded),
+            tooltip: 'Version history',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => NoteVersionHistoryScreen(note: currentNote),
+                ),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.content_copy_rounded),
             tooltip: 'Copy plain text',
             onPressed: () => _copyPlainText(context, currentNote),
@@ -221,6 +234,13 @@ class _NotePreviewScreenState extends ConsumerState<NotePreviewScreen> {
                 case _PreviewMenuAction.exportPdf:
                   _exportAsPdf(context, currentNote);
                   break;
+                case _PreviewMenuAction.versionHistory:
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => NoteVersionHistoryScreen(note: currentNote),
+                    ),
+                  );
+                  break;
               }
             },
             itemBuilder: (ctx) => const [
@@ -231,6 +251,16 @@ class _NotePreviewScreenState extends ConsumerState<NotePreviewScreen> {
                     Icon(Icons.picture_as_pdf_outlined),
                     SizedBox(width: 10),
                     Text('Export as PDF'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: _PreviewMenuAction.versionHistory,
+                child: Row(
+                  children: [
+                    Icon(Icons.history_rounded),
+                    SizedBox(width: 10),
+                    Text('Version History'),
                   ],
                 ),
               ),
@@ -338,32 +368,43 @@ class _NotePreviewScreenState extends ConsumerState<NotePreviewScreen> {
                           children: headings.map((item) {
                             final leftPad = ((item.level - 1) * 12).toDouble();
                             final isActive = _activeHeadingLineIndex == item.lineIndex;
-                            return ListTile(
-                              dense: true,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              tileColor: isActive
+                            return Material(
+                              color: isActive
                                   ? theme.colorScheme.primary.withValues(alpha: 0.15)
                                   : Colors.transparent,
-                              contentPadding: EdgeInsets.fromLTRB(8 + leftPad, 0, 8, 0),
-                              leading: Text(
-                                'H${item.level}',
-                                style: AppTypography.labelMedium.copyWith(
-                                  color: isActive
-                                      ? theme.colorScheme.primary
-                                      : theme.colorScheme.onSurfaceVariant,
-                                  fontWeight: FontWeight.w700,
+                              borderRadius: BorderRadius.circular(8),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () => _jumpToHeading(item),
+                                child: Padding(
+                                  padding: EdgeInsets.fromLTRB(10 + leftPad, 8, 10, 8),
+                                  child: Row(
+                                    children: [
+                                      Text(
+                                        'H${item.level}',
+                                        style: AppTypography.labelMedium.copyWith(
+                                          color: isActive
+                                              ? theme.colorScheme.primary
+                                              : theme.colorScheme.onSurfaceVariant,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          item.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppTypography.labelLarge.copyWith(
+                                            color: isActive ? theme.colorScheme.primary : textColor,
+                                            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              title: Text(
-                                item.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: AppTypography.labelLarge.copyWith(
-                                  color: isActive ? theme.colorScheme.primary : textColor,
-                                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                                ),
-                              ),
-                              onTap: () => _jumpToHeading(item),
                             );
                           }).toList(),
                         ),
@@ -562,22 +603,27 @@ class _NotePreviewScreenState extends ConsumerState<NotePreviewScreen> {
     Color accent;
     EdgeInsets pad;
 
+    final isDark = theme.brightness == Brightness.dark;
+
     if (level <= 1) {
-      style = AppTypography.headingMedium.copyWith(color: textColor);
-      bg = const Color(0xFFE6F0FF);
-      border = const Color(0xFF91B5FF);
+      style = AppTypography.headingMedium.copyWith(color: isDark ? const Color(0xFFD0E2FF) : textColor);
+      bg = isDark ? const Color(0xFF1E293B) : const Color(0xFFE6F0FF);
+      border = isDark ? const Color(0xFF334E68) : const Color(0xFF91B5FF);
       accent = const Color(0xFF2F6FED);
       pad = const EdgeInsets.symmetric(horizontal: 14, vertical: 10);
     } else if (level == 2) {
-      style = AppTypography.headingSmall.copyWith(color: textColor);
-      bg = const Color(0xFFE8F7EF);
-      border = const Color(0xFF8ECFA9);
+      style = AppTypography.headingSmall.copyWith(color: isDark ? const Color(0xFFD1F2D9) : textColor);
+      bg = isDark ? const Color(0xFF193226) : const Color(0xFFE8F7EF);
+      border = isDark ? const Color(0xFF2A5940) : const Color(0xFF8ECFA9);
       accent = const Color(0xFF228B5A);
       pad = const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
     } else {
-      style = AppTypography.labelLarge.copyWith(color: textColor, fontWeight: FontWeight.w700);
-      bg = const Color(0xFFFFF2E6);
-      border = const Color(0xFFFFC38A);
+      style = AppTypography.labelLarge.copyWith(
+        color: isDark ? const Color(0xFFFFDFBA) : textColor,
+        fontWeight: FontWeight.w700,
+      );
+      bg = isDark ? const Color(0xFF362419) : const Color(0xFFFFF2E6);
+      border = isDark ? const Color(0xFF664024) : const Color(0xFFFFC38A);
       accent = const Color(0xFFE07A22);
       pad = const EdgeInsets.symmetric(horizontal: 10, vertical: 6);
     }
@@ -1039,31 +1085,7 @@ class _NotePreviewScreenState extends ConsumerState<NotePreviewScreen> {
 
   Future<void> _exportAsPdf(BuildContext context, Note note) async {
     try {
-      final plainContent = _plainTextFromMarkdown(note.content);
-      final document = pw.Document();
-
-      document.addPage(
-        pw.MultiPage(
-          build: (ctx) => [
-            pw.Text(
-              note.title.trim().isEmpty ? 'Untitled Note' : note.title.trim(),
-              style: pw.TextStyle(fontSize: 22, fontWeight: pw.FontWeight.bold),
-            ),
-            pw.SizedBox(height: 6),
-            pw.Text(
-              'Updated: ${DateFormat('dd MMM yyyy, hh:mm a').format(note.updatedAt)}',
-              style: const pw.TextStyle(fontSize: 11),
-            ),
-            pw.SizedBox(height: 16),
-            pw.Text(
-              plainContent.isEmpty ? 'Empty note' : plainContent,
-              style: const pw.TextStyle(fontSize: 12, lineSpacing: 2),
-            ),
-          ],
-        ),
-      );
-
-      final bytes = await document.save();
+      final bytes = await NotePdfService.generatePdf(note);
       final fileName = _buildPdfFileName(note);
       final savedPath = await _savePdfBytes(bytes, fileName);
 
